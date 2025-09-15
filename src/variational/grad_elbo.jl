@@ -41,6 +41,7 @@ function grad_and_logp_elbo(
     J = model.J
     M = model.M
     Tsubp = model.Tsubp
+    df_ξ = model.df_ξ
 
     # Unpack parameter vector
     β = θ[1:K*J]
@@ -87,7 +88,7 @@ function grad_and_logp_elbo(
     # Compute gradients:
     grad_β = grad_logp_conditional_β_unpacked(β, z, inv_Σ,  P_root, F, Mlik, J, K, Tsubp) # checked!
 
-    grad_log_ξ = grad_logp_conditional_ξ_unpacked(log_ξ, ξ, τ, β, P_root, inv_Σ, inv_S, z, MSvecinvz, F, F_sq, J, K, Tsubp) # checked!
+    grad_log_ξ = grad_logp_conditional_ξ_unpacked(log_ξ, ξ, τ, β, P_root, inv_Σ, inv_S, z, MSvecinvz, F, F_sq, J, K, Tsubp, df_ξ) # checked!
 
     grad_log_τ = grad_logp_conditional_τ(log_τ, log_ξ, J, K) # checked!
 

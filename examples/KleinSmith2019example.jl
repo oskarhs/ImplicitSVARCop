@@ -13,7 +13,7 @@ function run_example()
 
     # Simulate the data:
     n = 100
-    x, y = simulate_scenario_2(rng, n)
+    x, y = simulate_scenario_3(rng, n)
     #x, y = simulate_scenario_3(rng, n)
 
     order = 4
@@ -29,22 +29,23 @@ function run_example()
     J = dim_basis
     K = 1
     M = 1
-    model = VARModel(z_est, F, K, J, M, n; df_ξ = 1.0)
+    model = VARModel(z_est, F, K, J, M, n; df_ξ = 20.0)
 
     # Fit MCMC posterior
-    n_samples, n_adapts = 1000, 5_000
+    n_samples, n_adapts = 10, 5_000
 
     D = LogDensityProblems.dimension(model)
     #metric = DenseEuclideanMetric(D)
     metric = DiagEuclideanMetric(D)
     hamiltonian = Hamiltonian(metric, θ -> logp_joint(model, θ), θ -> logp_and_grad_joint(model, θ))
 
-    θ_init = rand(rng, Normal(), D)    
+    #θ_init = rand(rng, Normal(), D)
+    θ_init = zeros(Float64, D)
 
     # Define a leapfrog solver, with the initial step size chosen heuristically
     ϵ_init = find_good_stepsize(hamiltonian, θ_init)
     integrator = Leapfrog(ϵ_init)
-    kernel = HMCKernel(Trajectory{MultinomialTS}(integrator, GeneralisedNoUTurn(max_depth=10)))
+    kernel = HMCKernel(Trajectory{MultinomialTS}(integrator, GeneralisedNoUTurn(max_depth=8)))
     adaptor = StanHMCAdaptor(MassMatrixAdaptor(metric), StepSizeAdaptor(0.5, integrator))
     #samples, stats = sample(hamiltonian, kernel, θ_init, n_samples, adaptor, n_adapts; progress=true, (pm_next!) = AdvancedHMC.simple_pm_next!)
 
@@ -92,7 +93,7 @@ function run_example_bivariate()
 
     # First case h₂(x)
     # Simulate the data:
-    n = 1000
+    n = 10000
     x, y = simulate_scenario_4(rng, n)
 
     order = 4
@@ -111,8 +112,8 @@ function run_example_bivariate()
     K = 2
     J = K*dim_basis
     M = 1
-    df_ξ = 10.0
-    model = VARModel(z_est, F, K, J, M, n, α = 1e-1)
+    df_ξ = 1.0
+    model = VARModel(z_est, F, K, J, M, n)
 
     # Fit MCMC posterior
     n_samples, n_adapts = 10_000, 5_000
@@ -122,14 +123,15 @@ function run_example_bivariate()
     metric = DiagEuclideanMetric(D)
     hamiltonian = Hamiltonian(metric, θ -> logp_joint(model, θ), θ -> logp_and_grad_joint(model, θ))
 
-    θ_init = rand(rng, Normal(), D)    
+    #θ_init = rand(rng, Normal(), D)
+    θ_init = zeros(Float64, D)
 
     # Define a leapfrog solver, with the initial step size chosen heuristically
     ϵ_init = find_good_stepsize(hamiltonian, θ_init)
     integrator = Leapfrog(ϵ_init)
 
     # Define NUTS sampler
-    kernel = HMCKernel(Trajectory{MultinomialTS}(integrator, GeneralisedNoUTurn(max_depth=7)))
+    kernel = HMCKernel(Trajectory{MultinomialTS}(integrator, GeneralisedNoUTurn(max_depth=8)))
     adaptor = StanHMCAdaptor(MassMatrixAdaptor(metric), StepSizeAdaptor(0.5, integrator))
     samples, stats = sample(hamiltonian, kernel, θ_init, n_samples, adaptor, n_adapts; progress=true, (pm_next!) = AdvancedHMC.simple_pm_next!)
 
@@ -137,7 +139,7 @@ function run_example_bivariate()
     describe(chain)
 
     # Fit variational posterior
-    posterior, ELBOs = fitBayesianSVARCopVI(rng, model, 3000, 15)
+    posterior, ELBOs = fitBayesianSVARCopVI(rng, model, 5000, 15)
     
     # Approximate the regression function via Monte Carlo by resampling ϵ
     f = estimate_mean_scenario_4(rng, x)
@@ -163,7 +165,7 @@ function run_example_bivariate()
     # Compute RMSE:
     println(sqrt(mean((f - y_pred_VI).^2)))   # RMSE of model
     println(sqrt(mean((f .- mean(y)).^2))) # RMSE of null model
-    println(sqrt(mean((f .- y_pred_MCMC).^2))) # RMSE of predictions based on true model
+    println(sqrt(mean((f - y_pred_MCMC).^2))) # RMSE of predictions based on true model
 end
 
 function simulate_scenario_2(rng::Random.AbstractRNG, n_sim::Int)

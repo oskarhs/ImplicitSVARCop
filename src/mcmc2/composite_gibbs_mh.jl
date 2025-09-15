@@ -47,6 +47,7 @@ function composite_gibbs_mh(rng::Random.AbstractRNG, model::VARModel, θ_init::A
 
         log_ξ = log_ξ - hess_prop \ grad_prop
     end =#
+    #log_ξ = zeros(Float64, K*J)
 
     # Set up progressbar
     pm = progress ? Progress(num_samples; desc="Generating samples", barlen=31) : nothing
@@ -72,7 +73,6 @@ function composite_gibbs_mh(rng::Random.AbstractRNG, model::VARModel, θ_init::A
         log_τ = sample_mh_τ_all(rng, log_τ, log_ξ, J, K)
 
         # Sample covariance parameters jointly using mh
-        #log_ξ = sample_mh_log_ξ(rng, prep_grad_ξ, backend, log_ξ, log_τ, β, inv_Σ, z, F, F_sq, J, K, Tsubp, df_ξ)
         log_ξ = sample_mh_log_ξ_diag(rng, prep_grad_ξ, backend, log_ξ, log_τ, β, inv_Σ, z, F, F_sq, J, K, Tsubp, df_ξ)
 
         # For now, just leave γ as is (we run on 1D examples, so this parameter has no effect)

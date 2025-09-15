@@ -4,7 +4,7 @@ function logp_conditional_ξ(log_ξ::AbstractArray{<:Real}, log_τ::AbstractArra
     logp = 0.0
     for k in 1:K
         for j in 1:J
-            logp += log_ξ[(k-1)*J + j]-log(1.0 + (ξ[(k-1)*J + j] / τ[k])^2) # contribution from prior
+            logp += log_ξ[(k-1)*J + j]-0.5*(df_ξ + 1.0) * log(1.0 + (ξ[(k-1)*J + j] / τ[k])^2 / df_ξ) # contribution from prior
         end
     end
 
@@ -14,13 +14,11 @@ function logp_conditional_ξ(log_ξ::AbstractArray{<:Real}, log_τ::AbstractArra
     C = cholesky(inv_Σ).L
 
     # quadratic form in prior
-    #temp1 = vec(reshape(P_root * β, (J, K)) * C)
     temp1 = reshape(P_root * β, (J, K)) * C
     logp -= 0.5*sum(abs2, temp1)
 
     # quadratic form in likelihood
     XB = F * reshape(β, (J, K))
-    #temp2 = vec( (reshape(inv_S * z, (Tsubp, K)) - XB) * C)
     temp2 = (reshape(inv_S * z, (Tsubp, K)) - XB) * C
     logp -= 0.5*sum(abs2, temp2)
     return logp
@@ -91,9 +89,8 @@ function grad_logp_conditional_ξ_unpacked(log_ξ::AbstractArray{<:Real}, ξ::Ab
 end
 
 
-function grad_logp_conditional_ξ_nt(log_ξ::AbstractArray{<:Real}, τ::AbstractArray{<:Real}, β::AbstractArray,
-                                        inv_Σ::AbstractArray, z::AbstractArray,
-                                        F::AbstractArray, F_sq::AbstractArray, J::Int, K::Int, Tsubp::Int, df_ξ::Real)
+function grad_logp_conditional_ξ_nt(log_ξ::AbstractArray{<:Real}, τ::AbstractArray{<:Real}, β::AbstractArray, inv_Σ::AbstractArray,
+                                    z::AbstractArray, F::AbstractArray, F_sq::AbstractArray, J::Int, K::Int, Tsubp::Int, df_ξ::Real)
     # Precompute relevant quantities.
     ξ = map(exp, log_ξ)
     P_root = Diagonal(map(inv, ξ))
@@ -152,112 +149,6 @@ function grad_logp_conditional_ξ_nt(log_ξ::AbstractArray{<:Real}, τ::Abstract
     return grad
 end
 
-function softabsmax(x::AbstractVector{<:Real}, α::Real)
-    return ifelse.(x .!= 0.0, x .* coth.(α * x), 1.0/α)
-end
-
-function softabsmax(x::Real, α::Real)
-    return ifelse(x != 0.0, x * coth(α * x), 1.0/α)
-end
-
-
-function sample_mh_log_ξ( # Use the eigendecomposition to compute cholesky decomp directly later
-    rng::Random.AbstractRNG,
-    backend,
-    prep_grad_ξ,
-    log_ξ::AbstractArray{<:Real},
-    log_τ::AbstractArray{<:Real},
-    β::AbstractArray,
-    inv_Σ::AbstractArray, z::AbstractArray,
-    F::AbstractArray,
-    F_sq::AbstractArray,
-    J::Int,
-    K::Int,
-    Tsubp::Int,
-    df_ξ::Real
-)   
-    τ = map(exp, log_τ)
-
-    lr = 1.0
-
-    # Compute gradient and hessian of current state
-    grad_prop, hess_prop = value_and_jacobian(
-        ImplicitSVARCop.grad_logp_conditional_ξ_nt,
-        backend,
-        prep_grad_ξ,
-        log_ξ,
-        Constant(τ),
-        Constant(β),
-        Constant(inv_Σ),
-        Constant(z),
-        Constant(F),
-        Constant(F_sq),
-        Constant(J),
-        Constant(K),
-        Constant(Tsubp),
-        Constant(df_ξ)
-    )
-    α = 1e6 # Use the Betancourt trick
-    vals, vecs = eigen(-hess_prop)
-    vals = Diagonal(softabsmax(vals, α))
-    Ψ_prop = Symmetric(vecs * vals * transpose(vecs))
-    mean_prop = log_ξ + lr * Ψ_prop \ grad_prop
-
-    # Draw proposal
-    log_ξ_prop = rand(rng, MvNormal(mean_prop, inv(Ψ_prop)))
-
-    # Compute reverse proposal:
-    grad_rev, hess_rev = value_and_jacobian(
-        ImplicitSVARCop.grad_logp_conditional_ξ_nt,
-        backend,
-        prep_grad_ξ,
-        log_ξ_prop,
-        Constant(τ),
-        Constant(β),
-        Constant(inv_Σ),
-        Constant(z),
-        Constant(F),
-        Constant(F_sq),
-        Constant(J),
-        Constant(K),
-        Constant(Tsubp),
-        Constant(df_ξ)
-    )
-    if any(isnan.(grad_rev)) || any(isnan.(hess_rev)) || any(isinf.(grad_rev)) || any(isinf.(hess_rev))
-        println(log_ξ_prop)
-    end
-    if rank(hess_rev) < length(grad_rev) # If matrix is rank deficient, use Tikhonov!
-        hess_rev += 1e-2 * I
-    end
-    vals, vecs = eigen(-hess_rev)
-    #println(vals)
-    vals = Diagonal(softabsmax(vals, α))
-    #println(diag(vals))
-    Ψ_rev = Symmetric(vecs * vals * transpose(vecs))
-    if rank(Ψ_rev) < length(grad_rev) # If matrix is rank deficient, use Tikhonov!
-        Ψ_rev += 1e-2 * I
-    end
-    mean_rev = log_ξ_prop + lr * Ψ_rev \ grad_rev
-    # Compute MH ratio:
-
-    log_mh_ratio = logpdf(MvNormal(mean_rev, inv(Ψ_rev)), log_ξ_prop) - logpdf(MvNormal(mean_prop, inv(Ψ_prop)), log_ξ)
-    #println(log_mh_ratio)
-
-    log_mh_ratio += logp_conditional_ξ_autodiff(log_ξ_prop, log_τ, β, inv_Σ, z, F, F_sq, J, K, Tsubp, df_ξ) - logp_conditional_ξ_autodiff(log_ξ, log_τ, β, inv_Σ, z, F, F_sq, J, K, Tsubp, df_ξ)
-
-    #println(log_mh_ratio)
-
-    # Accept or reject
-    u = rand(rng, Uniform(0,1))
-    if log(u) < log_mh_ratio
-        log_ξ = log_ξ_prop
-    end
-    return log_ξ
-end
-
-
-
-
 function sample_mh_log_ξ_diag( # Use the eigendecomposition to compute cholesky decomp directly later
     rng::Random.AbstractRNG,
     backend,
@@ -265,7 +156,8 @@ function sample_mh_log_ξ_diag( # Use the eigendecomposition to compute cholesky
     log_ξ::AbstractArray{<:Real},
     log_τ::AbstractArray{<:Real},
     β::AbstractArray,
-    inv_Σ::AbstractArray, z::AbstractArray,
+    inv_Σ::AbstractArray,
+    z::AbstractArray,
     F::AbstractArray,
     F_sq::AbstractArray,
     J::Int,
@@ -297,7 +189,7 @@ function sample_mh_log_ξ_diag( # Use the eigendecomposition to compute cholesky
             Constant(Tsubp),
             Constant(df_ξ)
         )
-        var_prop = max(eps(), -1.0/hess_prop[j,j])
+        var_prop = max(1e-10, -1.0/hess_prop[j,j])
         mean_prop = log_ξ[j] + lr * grad_prop[j] * var_prop
 
         # Draw proposal
@@ -320,11 +212,12 @@ function sample_mh_log_ξ_diag( # Use the eigendecomposition to compute cholesky
             Constant(Tsubp),
             Constant(df_ξ)
         )
-        var_rev = max(eps(), -1.0/hess_rev[j,j])
+        var_rev = max(1e-10, -1.0/hess_rev[j,j])
         mean_rev = log_ξ_prop[j] + lr * grad_rev[j] * var_rev
 
         if !(isinf(var_rev) || isnan(var_rev) || var_rev == zero(var_rev))
             log_mh_ratio = logpdf(Normal(mean_rev, sqrt(var_rev)), log_ξ[j]) - logpdf(Normal(mean_prop, sqrt(var_prop)), log_ξ_prop[j])
+            println(log_mh_ratio)
 
             if any(isinf.(map(exp, log_ξ_prop))) || any(0.0 .== map(exp, log_ξ_prop))
                 println(mean_prop)
