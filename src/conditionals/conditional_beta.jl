@@ -23,13 +23,12 @@ function sample_conditional_β(rng::Random.AbstractRNG, inv_Σ::AbstractArray, P
     C_β = cholesky(inv_Σ_β).L  # inv(Σ_β) = C_β * C_β'
     U_β = inv(C_β)             # Σ_β = U_β' * U_β
 
-    μ_β = U_β * transpose(U_β) * kron(inv_Σ, F_t) * inv_Sz
+    μ_β = transpose(U_β) * U_β * kron(inv_Σ, F_t) * inv_Sz
 
     # NB! Better to compute cholesky of inv(Σ_β) first, then invert the Cholesky decomposition, as inversion is only O(n²) in this case
-    # Will keep this inefficient for now, as this is more in line with the paper draft for now, and as such will be a bit easier to debug.
 
     u = rand(rng, Normal(), K*J)
-    β = transpose(U_β) * u + μ_β
+    β = transpose(U_β) * u + μ_β # cov(β) = U_β' * cov(u) * U_β = Σ_β
     return β
 end
 

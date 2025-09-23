@@ -1,19 +1,34 @@
 module ImplicitSVARCop
 
 # Package imports
-using Distributions, Random, LinearAlgebra, Pigeons
+using Distributions, Random, LinearAlgebra, SliceSampling
 import Polyester: @batch
 import LoopVectorization: @turbo, vsum, vmap
 import SparseArrays: sparse
 import LogDensityProblems
+import AbstractMCMC
 using ProgressMeter: Progress, next!
 import BSplineKit: BSplineOrder, BSplineBasis
 import ForwardDiff
 import DifferentiationInterface: prepare_jacobian, value_and_jacobian, AutoForwardDiff, Constant
 
+# Required in order to use within Gibbs sampler
+const MetaSliceSamplers = Union{
+    SliceSampling.GibbsState,
+    SliceSampling.HitAndRunState
+}
+
+AbstractMCMC.getparams(state::MetaSliceSamplers) = state.transition.params
+
+
 include(joinpath("..", "..", "BandwidthSelectors.jl", "src", "BandwidthSelectors.jl"))
 using .BandwidthSelectors
 export fit, SSVKernel, UnivariateKDE, InterpKDEQF, InterpKDECDF
+
+
+
+include("VARModel.jl")
+export VARModel, get_varsymbols
 
 include(joinpath("helpers", "Bspline_basis_matrix.jl"))
 export B_spline_basis_matrix
@@ -40,8 +55,10 @@ include(joinpath("conditionals", "conditional_g.jl"))
 #include(joinpath("conditionals_igprior", "conditional_g.jl"))
 export logp_conditional_γ, grad_logp_conditional_γ
 
-include("VARModel.jl")
-export VARModel, get_varsymbols
+include(joinpath("conditionals", "conditional_rho.jl"))
+#include(joinpath("conditionals_igprior", "conditional_g.jl"))
+export logp_conditional_rho, grad_logp_conditional_rho
+
 
 include(joinpath("conditionals", "conditional_joint.jl"))
 #include(joinpath("conditionals_igprior", "conditional_joint.jl"))
@@ -57,15 +74,17 @@ include(joinpath("variational", "grad_elbo.jl"))
 include(joinpath("variational", "adadelta_step.jl"))
 include(joinpath("variational", "VIPosterior.jl"))
 include(joinpath("variational", "fitBayesianSVARCopVI.jl"))
-export VIPosterior, fitBayesianSVARCopVI, logpdf, predict_response
+export VIPosterior, fitBayesianSVARCopVI, logpdf, predict_response, predict_response_plugin
 
-include(joinpath("mcmc", "grad_and_logp_elbo_conditional_xi_gamma.jl"))
-include(joinpath("mcmc", "sample_conditional_xi_gamma.jl"))
-include(joinpath("mcmc", "composite_gibbs_vi.jl"))
-export composite_gibbs_vi
 
-include(joinpath("mcmc2", "composite_gibbs_mh.jl"))
+include(joinpath("mcmc", "composite_gibbs_mh.jl"))
 export composite_gibbs_mh
+
+include(joinpath("mcmc", "composite_gibbs_slice.jl"))
+export composite_gibbs_abstractmcmc
+
+include(joinpath("mcmc", "composite_gibbs_slice_lkj.jl"))
+export composite_gibbs_abstractmcmc_lkj
 
 
 end # end module

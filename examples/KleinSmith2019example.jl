@@ -1,4 +1,4 @@
-using Random, Distributions, BSplineKit, StatsPlots, AdvancedHMC, LogDensityProblems, MCMCChains, LinearAlgebra, ForwardDiff
+using Random, Distributions, BSplineKit, StatsPlots, AdvancedHMC, LogDensityProblems, MCMCChains, LinearAlgebra, ForwardDiff, SliceSampling, AbstractMCMC
 include(joinpath(@__DIR__, "..", "src", "ImplicitSVARCop.jl"))
 using .ImplicitSVARCop
 
@@ -13,7 +13,7 @@ function run_example()
 
     # Simulate the data:
     n = 100
-    x, y = simulate_scenario_3(rng, n)
+    x, y = simulate_scenario_2(rng, n)
     #x, y = simulate_scenario_3(rng, n)
 
     order = 4
@@ -29,52 +29,52 @@ function run_example()
     J = dim_basis
     K = 1
     M = 1
-    model = VARModel(z_est, F, K, J, M, n; df_ξ = 20.0)
+    model = VARModel(z_est, F, K, J, M, n; df_ξ = 1.0)
 
     # Fit MCMC posterior
-    n_samples, n_adapts = 10, 5_000
+    n_samples, n_adapts = 10_000, 5_000
 
-    D = LogDensityProblems.dimension(model)
-    #metric = DenseEuclideanMetric(D)
-    metric = DiagEuclideanMetric(D)
-    hamiltonian = Hamiltonian(metric, θ -> logp_joint(model, θ), θ -> logp_and_grad_joint(model, θ))
+    D = 2*K*J+K+1
+    θ_init = rand(rng, Normal(), D)
 
-    #θ_init = rand(rng, Normal(), D)
-    θ_init = zeros(Float64, D)
+    sampler_ξ = NUTS(0.7)
+    sampler_γ = NUTS(0.7)
+    samples = composite_gibbs_abstractmcmc(rng, model, sampler_ξ, sampler_γ, θ_init, n_samples; n_adapts=n_adapts, progress=true)
 
-    # Define a leapfrog solver, with the initial step size chosen heuristically
-    ϵ_init = find_good_stepsize(hamiltonian, θ_init)
-    integrator = Leapfrog(ϵ_init)
-    kernel = HMCKernel(Trajectory{MultinomialTS}(integrator, GeneralisedNoUTurn(max_depth=8)))
-    adaptor = StanHMCAdaptor(MassMatrixAdaptor(metric), StepSizeAdaptor(0.5, integrator))
-    #samples, stats = sample(hamiltonian, kernel, θ_init, n_samples, adaptor, n_adapts; progress=true, (pm_next!) = AdvancedHMC.simple_pm_next!)
-
-    samples = composite_gibbs_mh(rng, model, θ_init, n_samples; progress = true)
+    samples = composite_gibbs_abstractmcmc_lkj(rng, model, sampler_ξ, sampler_γ, θ_init, n_samples; n_adapts=n_adapts, progress=true)
 
 
-    chain = MCMCChains.Chains(samples, get_varsymbols(model))
+    chain = MCMCChains.Chains(samples[5001:end], get_varsymbols(model))
     describe(chain)
+
+    samples_mh = composite_gibbs_mh(rng, model, θ_init, n_samples; progress=true)
+    chain_mh = MCMCChains.Chains(samples_mh[5001:end], get_varsymbols(model))
+    describe(chain_mh)
 
     # Fit variational posterior
     posterior, ELBOs = fitBayesianSVARCopVI(rng, model, 3000, 15)
     
     # Approximate the regression function via Monte Carlo by resampling ϵ
-    f = estimate_mean_scenario_3(rng, x; N_mc = 1000)
+    f = estimate_mean_scenario_2(rng, x; N_mc = 1000)
+    #f = estimate_mean_scenario_3(rng, x; N_mc = 1000)
 
     # Get new predictions
     newdata = VARModel(z_est, F, K, J, M, n)
-    y_pred_VI = predict_response(rng, posterior, kdests, newdata; N_mc = 1000)
+    #y_pred_VI = predict_response(rng, posterior, kdests, newdata; N_mc = 500)
 
-    y_pred_MCMC = predict_response(rng, samples[n_adapts+1:end], kdests, newdata)
+    #y_pred_MCMC = predict_response(rng, samples[n_adapts+1:end], kdests, newdata)
+    y_pred_MCMC = predict_response_plugin(rng, samples, kdests, newdata)
+    y_pred_VI = predict_response_plugin(rng, posterior, kdests, newdata; N_mc = 500)
+
 
     # Plotting
     t = LinRange(0, 1, 1001)
     ind = sortperm(x)
 
     plotdata = VARModel(t, B_spline_basis_matrix(t, order, dim_basis), K, J, M, length(t))
-    p = plot(t, estimate_mean_scenario_3(rng, t), label="True mean")
-    plot!(p, t, predict_response(rng, posterior, kdests, plotdata), label="VI mean")
-    plot!(p, t, predict_response(rng, samples[n_adapts+1:end], kdests, plotdata), label="MCMC mean")
+    p = plot(t, estimate_mean_scenario_2(rng, t), label="True mean")
+    plot!(p, t, predict_response_plugin(rng, posterior, kdests, plotdata), label="VI mean")
+    plot!(p, t, predict_response_plugin(rng, samples[n_adapts+1:end], kdests, plotdata), label="MCMC mean")
 
     p = plot(x[ind], f[ind], label="True mean")
     plot!(p, x[ind], y_pred_VI[ind], label="VI mean")
@@ -93,8 +93,9 @@ function run_example_bivariate()
 
     # First case h₂(x)
     # Simulate the data:
-    n = 10000
-    x, y = simulate_scenario_4(rng, n)
+    n = 400
+    corr = -0.7
+    x, y = simulate_scenario_4(rng, n; corr=corr)
 
     order = 4
     dim_basis = 25
@@ -113,30 +114,26 @@ function run_example_bivariate()
     J = K*dim_basis
     M = 1
     df_ξ = 1.0
-    model = VARModel(z_est, F, K, J, M, n)
+    model = VARModel(z_est, F, K, J, M, n; df_ξ=df_ξ)
 
     # Fit MCMC posterior
-    n_samples, n_adapts = 10_000, 5_000
+    n_samples, n_adapts = 10_000, 2_000
 
-    D = LogDensityProblems.dimension(model)
-    #metric = DenseEuclideanMetric(D)
-    metric = DiagEuclideanMetric(D)
-    hamiltonian = Hamiltonian(metric, θ -> logp_joint(model, θ), θ -> logp_and_grad_joint(model, θ))
+    #D = LogDensityProblems.dimension(model)
+    D = 2*K*J+K+1
+    θ_init = rand(rng, Normal(), D)
 
-    #θ_init = rand(rng, Normal(), D)
-    θ_init = zeros(Float64, D)
-
-    # Define a leapfrog solver, with the initial step size chosen heuristically
-    ϵ_init = find_good_stepsize(hamiltonian, θ_init)
-    integrator = Leapfrog(ϵ_init)
-
-    # Define NUTS sampler
-    kernel = HMCKernel(Trajectory{MultinomialTS}(integrator, GeneralisedNoUTurn(max_depth=8)))
-    adaptor = StanHMCAdaptor(MassMatrixAdaptor(metric), StepSizeAdaptor(0.5, integrator))
-    samples, stats = sample(hamiltonian, kernel, θ_init, n_samples, adaptor, n_adapts; progress=true, (pm_next!) = AdvancedHMC.simple_pm_next!)
+    sampler_ξ = NUTS(0.7)
+    sampler_ρ = NUTS(0.7)
+    samples = composite_gibbs_abstractmcmc_lkj(rng, model, sampler_ξ, sampler_ρ, θ_init, n_samples; n_adapts=n_adapts, progress=true)
 
     chain = MCMCChains.Chains(samples[n_adapts:end], get_varsymbols(model))
     describe(chain)
+
+    chain = MCMCChains.Chains(samples[n_adapts:end])
+    plot(chain, :param_203)
+    mean(tanh.(chain[:param_203].data))
+    density(tanh.(chain[:param_203].data))
 
     # Fit variational posterior
     posterior, ELBOs = fitBayesianSVARCopVI(rng, model, 5000, 15)
@@ -146,9 +143,9 @@ function run_example_bivariate()
 
     # Get new predictions
     newdata = VARModel(z_est, F, K, J, M, n)
-    y_pred_VI = predict_response(rng, posterior, kdests, newdata; N_mc = 500)
+    y_pred_VI = predict_response_plugin(rng, posterior, kdests, newdata; N_mc = 500)
 
-    y_pred_MCMC = predict_response(rng, samples[n_adapts+1:end], kdests, newdata)
+    y_pred_MCMC = predict_response_plugin(rng, samples[n_adapts+1:end], kdests, newdata)
 
     # Plotting
     pl = []
@@ -157,7 +154,7 @@ function run_example_bivariate()
         ind = sortperm(xi)
         p = plot(xi[ind], f[ind, dim], label="True mean", color="black", lw=3)
         plot!(p, xi[ind], y_pred_VI[ind, dim], label="VI mean", linestyle=:dash)
-        #plot!(p, xi[ind], y_pred_MCMC[ind, dim], label="MCMC mean", linestyle=:dash)
+        plot!(p, xi[ind], y_pred_MCMC[ind, dim], label="MCMC mean", linestyle=:dash)
         push!(pl, p)
     end
     plot(pl...)
@@ -223,15 +220,18 @@ function estimate_mean_scenario_3(rng::Random.AbstractRNG, x::AbstractVector; N_
     return f
 end
 
-function simulate_scenario_4(rng::Random.AbstractRNG, n_sim::Int)
+function simulate_scenario_4(rng::Random.AbstractRNG, n_sim::Int; corr)
     r2 = 0.47
     r3 = 0.58
 
     D = Diagonal([r2, r3])
-    R = [1.0 0.7; 0.7 1.0]
+    R = [1.0 corr; corr 1.0]
     V_ϵ = Symmetric(D * R * D)
     ϵ = transpose(rand(rng, MvNormal(zeros(2), V_ϵ), n_sim))
-    x = rand(rng, Uniform(), (n_sim, 2)) # nonlinear effect
+    
+    # Simulate from a copula to introduce dependence between covariates
+    #x = rand(rng, Uniform(), (n_sim, 2)) # nonlinear effect
+    x = transpose(cdf.(Normal(), rand(rng, MvNormal(zeros(2), [1.0 0.4; 0.4 1.0]), n_sim)))
 
     # Copula scale:
     z = h_bivariate(x) + ϵ
@@ -241,14 +241,14 @@ function simulate_scenario_4(rng::Random.AbstractRNG, n_sim::Int)
 end
 
 
-function estimate_mean_scenario_4(rng::Random.AbstractRNG, x::AbstractArray; N_mc = 1000)
+function estimate_mean_scenario_4(rng::Random.AbstractRNG, x::AbstractArray; corr, N_mc = 1000)
     r2 = 0.47
     r3 = 0.58
     n = size(x, 1)
 
     f = Matrix{Float64}(undef, size(x, 1), 2)
     D = Diagonal([r2, r3])
-    R = [1.0 0.7; 0.7 1.0]
+    R = [1.0 corr; corr 1.0]
     V_ϵ = Symmetric(D * R * D)
     e = transpose(rand(rng, MvNormal(zeros(2), V_ϵ), N_mc))
     for i in 1:n

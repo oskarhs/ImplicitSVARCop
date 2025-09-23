@@ -101,9 +101,17 @@ adaptor = StanHMCAdaptor(MassMatrixAdaptor(metric), StepSizeAdaptor(0.7, integra
 chain = MCMCChains.Chains(samples[n_adapts+1:end], get_varsymbols(model))
 describe(chain)
 
-plot(chain[Symbol("log_ξ[6]")])
+i = 3
+plot(chain[Symbol("log_ξ[$i]")])
+plot(chain[Symbol("β[$i]")])
 
-plot(autocor(chain[Symbol("β[18]")]))
+i = 6
+marginalscatter(chain[Symbol("β[$i]")], chain[Symbol("log_ξ[$i]")])
+
+
+plot(autocor(chain[Symbol("β[$i]")]))
+
+plot(chain, Symbol("γ[1]"))
 
 # Plot basis expansions
 β_matrix = Matrix{Float64}(undef, n_samples, 54)

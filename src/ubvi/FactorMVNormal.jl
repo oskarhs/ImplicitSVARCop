@@ -115,39 +115,12 @@ end
 """
 Function used to initialize a new component in the VI algorithm.
 """
-function params_init(rng::Random.AbstractRNG, comps::Vector{<:FactorNormal}, weights::Vector{<:Real}, infl::Real=10.0)
+function params_init(rng::Random.AbstractRNG, comps::Vector{<:FactorMVNormal}, weights::Vector{<:Real}, infl::Real=10.0)
     # For now: assume that the first component has been initialized via the existing VI code.
     m = rand(rng, DiscreteNonParametric(1:k, weights))
     μ = rand(rng, MvNormal(comps[m].μ, infl * covariance(comps[m])))
-    Bfac = comps[m].Bfac
+    Bfac = comps[m].Bfac * rand(rng, LogNormal(0.0, infl). length(comps[m].d))
     d = comps[m].d * rand(rng, LogNormal(0.0, infl). length(comps[m].d))
 
     return FactorMVNormal(μ, Bfac, d, comps[m].J, comps[m].K, comps[m].M_γ)
 end
-
-def params_init(self, params, weights, inflation):
-        params = np.atleast_2d(params)
-        i = params.shape[0]
-        if i==0:
-            mu0 = np.random.multivariate_normal(np.zeros(self.d), inflation*np.eye(self.d))
-            if self.diag:
-                lSig = np.zeros(self.d)
-                xtmp = np.hstack((mu0, lSig))
-            else:
-                L0 = np.eye(self.d)
-                xtmp = np.hstack((mu0, L0.reshape(self.d*self.d)))
-        else:
-            mu = params[:, :self.d]
-            k = np.random.choice(np.arange(i), p=(weights**2)/(weights**2).sum())
-            if self.diag:
-                lsig = params[:, self.d:]
-                mu0 = mu[k,:] + np.random.randn(self.d)*np.sqrt(inflation)*np.exp(lsig[k,:])
-                LSig = np.random.randn(self.d) + lsig[k,:] 
-                xtmp = np.hstack((mu0, LSig))
-            else:
-                Ls = params[:, self.d:].reshape((i, self.d, self.d))
-                sig = np.array([np.dot(L, L.T) for L in Ls])
-                mu0 = np.random.multivariate_normal(mu[k,:], inflation*sig[k,:,:])
-                L0 = np.exp(np.random.randn())*sig[k,:,:]
-                xtmp = np.hstack((mu0, L0.reshape(self.d*self.d)))
-        return xtmp

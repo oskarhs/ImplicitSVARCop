@@ -139,3 +139,35 @@ end
 
     @test isapprox(grad_θ, grad_θ_ad, rtol=1e-5)
 end
+
+@testset "Derivatives conditional ρ" begin
+    K = 2
+    J = 20
+    Tsubp = 200
+    M = 1 # irrelevant
+    θ_init = randn(2*K*J+K+1)
+    F = randn((Tsubp, J))
+    z = randn(Tsubp*K)
+
+    β = θ_init[1:K*J]
+    log_ξ = θ_init[K*J+1:2*K*J]
+    log_τ = θ_init[2*K*J+1:2*K*J+K]
+    atanh_ρ = θ_init[end]
+
+    XB = F * reshape(β, (J, K))
+    Mβ = reshape(β, (J, K))
+
+    # Precompute some quantities
+    ξ = map(exp, log_ξ)
+    ξ2 = map(abs2, ξ)
+    P_root = Diagonal(map(inv, ξ))
+    inv_S = Diagonal( sqrt.( 1.0 .+ vec( F.^2 * reshape( ξ2, (J, K) ) ) ) )
+    inv_Sz = inv_S * z # some computation can be reused here
+    Mlik = reshape(inv_Sz, (Tsubp, K)) - XB
+    vec_MliktMlik_t = transpose(vec(Mlik' * Mlik))
+
+    logp_autodiff = atanh_ρ -> logp_conditional_ρ_autodiff(atanh_ρ, β, P_root, Mlik, M, J, K, Tsubp)
+    grad_autodiff = ForwardDiff.derivative(logp_autodiff, atanh_ρ)
+    grad_analytic = grad_logp_conditional_ρ(atanh_ρ, β, P_root, vec_MliktMlik_t, M, J, K, Tsubp)
+    @test grad_analytic ≈ grad_autodiff
+end

@@ -1,4 +1,4 @@
-function composite_gibbs_vi(rng::Random.AbstractRNG, model::VARModel, θ_init::AbstractVector, N_fac::Int, N_iter_vi::Int, num_samples::Int; progress=true)
+function composite_gibbs_mh(rng::Random.AbstractRNG, model::VARModel, θ_init::AbstractVector, num_samples::Int; progress=true)
     # Unpack data
     z = model.z
     F = model.F
@@ -7,6 +7,7 @@ function composite_gibbs_vi(rng::Random.AbstractRNG, model::VARModel, θ_init::A
     J = model.J
     M = model.M
     Tsubp = model.Tsubp
+    df_ξ = model.df_ξ
     F_t = transpose(F)
 
     FtF = F_t * F
@@ -17,13 +18,39 @@ function composite_gibbs_vi(rng::Random.AbstractRNG, model::VARModel, θ_init::A
     log_τ = θ_init[2*K*J+1:2*K*J+K]
     M_γ = K*M - div(M*(M+1), 2) + M
     γ = θ_init[2*K*J+K+1:2*K*J+K+M_γ]
+    
+    # Prepare jabobian:
+    backend = AutoForwardDiff()
+    #fac_ret3 = F * (reshape(β, (J, K)) * inv(compute_Σ(γ, K, M)))   # Tsubp × K
+    #prep_grad_ξ = prepare_jacobian(grad_logp_conditional_ξ_nt, backend, log_ξ, Constant(map(exp, log_τ)), Constant(β), Constant(inv(compute_Σ(γ, K, M))), Constant(z), Constant(F), Constant(F_sq), Constant(fac_ret3), Constant(J), Constant(K), Constant(Tsubp))
+    prep_grad_ξ = prepare_jacobian(grad_logp_conditional_ξ_nt, backend, log_ξ, Constant(map(exp, log_τ)), Constant(β), Constant(inv(compute_Σ(γ, K, M))), Constant(z), Constant(F), Constant(F_sq), Constant(J), Constant(K), Constant(Tsubp), Constant(df_ξ))
 
-    # Set up VI posterior for first iteration:
-    conditional = VIPosterior(K*J + M_γ, N_fac, J, K, M_γ)
+
+    # Initialize log_ξ by computing the (local) maximum:
+    #= for _ in 1:10
+        grad_prop, hess_prop = value_and_jacobian(
+            grad_logp_conditional_ξ_nt,
+            prep_grad_ξ,
+            backend,
+            log_ξ,
+            Constant(map(exp, log_τ)),
+            Constant(β),
+            Constant(inv(compute_Σ(γ, K, M))),
+            Constant(z),
+            Constant(F),
+            Constant(F_sq),
+            Constant(J),
+            Constant(K),
+            Constant(Tsubp),
+            Constant(df_ξ)
+        )
+
+        log_ξ = log_ξ - hess_prop \ grad_prop
+    end =#
+    #log_ξ = zeros(Float64, K*J)
 
     # Set up progressbar
     pm = progress ? Progress(num_samples; desc="Generating samples", barlen=31) : nothing
-
     
     # Generate samples
     samples = Vector{Vector{Float64}}(undef, num_samples)
@@ -45,14 +72,11 @@ function composite_gibbs_vi(rng::Random.AbstractRNG, model::VARModel, θ_init::A
         # Sample log_τ using a Metropolis-Hastings step
         log_τ = sample_mh_τ_all(rng, log_τ, log_ξ, J, K)
 
-        # Sample covariance parameters jointly using VI
-        if b == 1
-            log_ξ, γ, conditional = sample_conditional_ξ_γ_vi(rng, log_ξ, γ, model, conditional, β, log_τ, XB, 500, N_fac)
-        elseif b%2 == 1
-            log_ξ, γ, conditional = sample_conditional_ξ_γ_vi(rng, log_ξ, γ, model, conditional, β, log_τ, XB, N_iter_vi, N_fac)
-        else
-            log_ξ, γ, conditional = sample_conditional_ξ_γ_rw(rng, log_ξ, γ, model, conditional, β, log_τ, XB)
-        end
+        # Sample covariance parameters jointly using mh
+        log_ξ = sample_mh_log_ξ_diag(rng, prep_grad_ξ, backend, log_ξ, log_τ, β, inv_Σ, z, F, F_sq, XB, J, K, Tsubp, df_ξ)
+
+        # For now, just leave γ as is (we run on 1D examples, so this parameter has no effect)
+        γ = γ
 
         # Store the values of the chain
         samples[b] = vcat(β, log_ξ, log_τ, γ)
@@ -63,7 +87,7 @@ function composite_gibbs_vi(rng::Random.AbstractRNG, model::VARModel, θ_init::A
     end
     return samples
 end
-
+#= 
 
 function compute_S(ξ2::AbstractVector, F_sq::AbstractArray, J::Int, K::Int, Tsubp::Int)
     inv_S_vec = Vector{eltype(ξ2)}(undef, K * Tsubp)
@@ -78,4 +102,4 @@ function compute_S(ξ2::AbstractVector, F_sq::AbstractArray, J::Int, K::Int, Tsu
     end
     inv_S = Diagonal(inv_S_vec)
     return inv_S, inv_S_vec
-end
+end =#

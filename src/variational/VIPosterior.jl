@@ -218,7 +218,6 @@ function predict_response(
                 y_pred[t, k] += mean(y) - cov(ϵ, y) * ϵ_bar # control variates estimator (true mean of ϵ is 0, variance is 1)
             end
         end
-                
     end
     y_pred = y_pred / length(posterior_samples)
     return y_pred
@@ -228,3 +227,52 @@ predict_response(
     kdests::Vector{T},
     model::VARModel
 ) where {T <: UnivariateKDE} = predict_response(Random.default_rng(), posterior_samples, kdests, model)
+
+
+function predict_response_plugin(
+    rng::Random.AbstractRNG,
+    posterior_samples::Vector{Vector{Float64}},
+    kdests::Vector{T},
+    model::VARModel
+) where {T <: UnivariateKDE}
+    N_mc_z = 100
+    J = model.J
+    K = model.K
+    Tsubp = model.Tsubp
+
+    ikqfs = Vector{InterpKDEQF}(undef, K) # Vector of interpolated quantile functions
+    for k in 1:K
+        ikqfs[k] = InterpKDEQF(kdests[k])
+    end
+    #ikqf = InterpKDEQF(kdest)
+    y_pred = zeros(Float64, (size(model.F, 1), K))
+    ϵ = rand(rng, Normal(), N_mc_z)
+    ϵ_bar = mean(ϵ)
+    β_hat = mean(hcat(posterior_samples...)[1:K*J,:], dims=2)
+    βmat = reshape(β_hat, (J, K))
+    ξ2_hat = mean(exp.(2.0*hcat(posterior_samples...)[K*J+1:2*K*J,:]), dims=2)
+    ξ2mat = reshape(ξ2_hat, (J, K))
+    for t in 1:Tsubp
+        s_vec = 1.0 ./ sqrt.( 1.0 .+ vec( transpose(@views model.F_sq[t,:]) * ξ2mat ) )
+        μ = s_vec .* vec(transpose(@views model.F[t,:]) * βmat)
+        for k in 1:K
+            #z_t_k = Base.rand(rng, Normal(μ[k], s_vec[k]), N_mc_z)
+            z_t_k = μ[k] .+ s_vec[k] * ϵ
+            y = quantile(ikqfs[k], cdf(Normal(), z_t_k))
+            y_pred[t, k] += mean(y) - cov(ϵ, y) * ϵ_bar # control variates estimator (true mean of ϵ is 0, variance is 1)
+        end
+    end
+    return y_pred
+end
+
+function predict_response_plugin(
+    rng::Random.AbstractRNG,
+    posterior::VIPosterior,
+    kdests::Vector{T},
+    model::VARModel;
+    N_mc::Int = 500
+) where {T <: UnivariateKDE}
+    θ = rand(rng, posterior, N_mc)
+    samples = [θ[:,i] for i in 1:N_mc]
+    return predict_response_plugin(rng, samples, kdests, model)
+end

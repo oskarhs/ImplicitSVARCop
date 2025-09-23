@@ -55,12 +55,12 @@ function LogDensityProblems.dimension(model::VARModel)
 end
 LogDensityProblems.capabilities(::Type{<:VARModel}) = LogDensityProblems.LogDensityOrder{1}() # Indicates that handwritten derivatives are available
 
-function LogDensityProblems.logdensity_and_gradient(model::Pigeons.BufferedAD{VARModel}, θ::AbstractVector)
+#= function LogDensityProblems.logdensity_and_gradient(model::Pigeons.BufferedAD{VARModel}, θ::AbstractVector)
     logp, grad_θ = logp_and_grad_joint(model, θ)
     return logp, grad_θ
-end
+end =#
 
-Pigeons.initialization(model::VARModel, ::Random.AbstractRNG, ::Int) = zeros(LogDensityProblems.dimension(model))
+#Pigeons.initialization(model::VARModel, ::Random.AbstractRNG, ::Int) = zeros(LogDensityProblems.dimension(model))
 
 
 """

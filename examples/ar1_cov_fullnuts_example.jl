@@ -1,4 +1,4 @@
-using Random, Distributions
+using Random, Distributions, SliceSampling, AdvancedHMC
 include(joinpath(@__DIR__, "..", "src", "ImplicitSVARCop.jl"))
 using .ImplicitSVARCop
 include(joinpath(@__DIR__, "..", "src", "composite_gibbs.jl"))
@@ -54,7 +54,6 @@ function test_AR1_cov()
     # Set the number of samples to draw and warmup iterations
     n_samples, n_adapts = 5_000, 2_000
 
-    pigeons(target = model, reference = model, explorer=AutoMALA(), record=[traces])
 
     # Define a Hamiltonian system
     metric = DenseEuclideanMetric(D)
@@ -67,7 +66,7 @@ function test_AR1_cov()
     integrator = Leapfrog(initial_ϵ)
 
     # Define NUTS sampler
-    kernel = HMCKernel(Trajectory{MultinomialTS}(integrator, GeneralisedNoUTurn(max_depth=9)))
+    kernel = HMCKernel(Trajectory{MultinomialTS}(integrator, GeneralisedNoUTurn(max_depth=8)))
     adaptor = StanHMCAdaptor(MassMatrixAdaptor(metric), StepSizeAdaptor(0.5, integrator))
 
     # Run the sampler
@@ -141,7 +140,7 @@ end
 function test_AR1_cov()
     rng = Random.default_rng()
     p = 1          # order
-    T = 1_000   # number of observations
+    T = 20   # number of observations
     J = 2 # Number of covariates per variable
     K = 1 # Dimension of response
     M = 1
@@ -166,11 +165,17 @@ function test_AR1_cov()
 
     model = VARModel(z, F, K, J, M, Tsubp)
     D = LogDensityProblems.dimension(model)
-    θ_init = rand(rng, Normal(), D)
+    #θ_init = rand(rng, Normal(), D)
+    θ_init = zeros(Float64, D)
     #n_samples = 3_000
     n_samples = 5_000
+    n_adapts = 1_000
 
-    samples = composite_gibbs_mh(rng, model, θ_init, n_samples; progress = true)
+    #sampler = NUTS(0.8)
+    sampler = RandPermGibbs(SliceDoublingOut(2.0; max_proposals=10^4))
+    
+    samples = composite_gibbs_abstractmcmc(rng, model, sampler, θ_init, n_samples; n_adapts = n_adapts, progress = true)
+    #samples = composite_gibbs_mh(rng, model, θ_init, n_samples)
     #samples = composite_gibbs_vi(rng, model, θ_init, N_fac, N_iter_vi, n_samples)
 
     log_τ_chain = vec(MCMCChains.Chains(samples, get_varsymbols(model))[Symbol("log_τ[1]")])
