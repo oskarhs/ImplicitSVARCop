@@ -102,3 +102,40 @@ function get_varsymbols(model::VARModel)
     end
     return varnames
 end
+
+"""
+    get_varsymbols_lkj(model::VARModel)
+
+Function to get the vector of variable names (as symbols) from a VARModel object. Each entry corresponds to the variable of the same index in θ.
+"""
+function get_varsymbols_lkj(model::VARModel)
+    K = model.K
+    J = model.J
+    M = model.M
+
+    varnames = Vector{Symbol}(undef, 2*K*J+K + div(K*(K-1), 2))
+    K = model.K
+    J = model.J
+
+    ind0 = 0
+    ind1 = K*J
+    for i in ind0+1:ind1
+        varnames[i] = Symbol("β[$(i-ind0)]")
+    end
+    ind0 = ind1
+    ind1 = 2*K*J
+    for i in ind0+1:2*K*J
+        varnames[i] = Symbol("log_ξ[$(i-ind0)]")
+    end
+    ind0 = ind1
+    ind1 = 2*K*J+K
+    for i in ind0 + 1:ind1
+        varnames[i] = Symbol("log_τ[$(i-ind0)]")
+    end
+    ind0 = ind1
+    ind1 = 2*K*J+K + div(K*(K-1), 2)
+    for i in ind0 + 1:ind1
+        varnames[i] = Symbol("atanh_ρ[$(i-ind0)]")
+    end
+    return varnames
+end

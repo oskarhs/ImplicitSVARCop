@@ -37,14 +37,12 @@ function run_example()
     D = 2*K*J+K+1
     θ_init = rand(rng, Normal(), D)
 
-    sampler_ξ = NUTS(0.7)
-    sampler_γ = NUTS(0.7)
+    sampler_ξ = NUTS(0.75)
+    sampler_γ = NUTS(0.75)
     samples = composite_gibbs_abstractmcmc(rng, model, sampler_ξ, sampler_γ, θ_init, n_samples; n_adapts=n_adapts, progress=true)
 
-    samples = composite_gibbs_abstractmcmc_lkj(rng, model, sampler_ξ, sampler_γ, θ_init, n_samples; n_adapts=n_adapts, progress=true)
 
-
-    chain = MCMCChains.Chains(samples[5001:end], get_varsymbols(model))
+    chain = MCMCChains.Chains(samples[5001:end], get_varsymbols_lkj(model))
     describe(chain)
 
     samples_mh = composite_gibbs_mh(rng, model, θ_init, n_samples; progress=true)
@@ -91,10 +89,9 @@ end
 function run_example_bivariate()
     rng = Random.Xoshiro(1)
 
-    # First case h₂(x)
     # Simulate the data:
-    n = 400
-    corr = -0.7
+    n = 1000
+    corr = 0.5
     x, y = simulate_scenario_4(rng, n; corr=corr)
 
     order = 4
@@ -119,7 +116,6 @@ function run_example_bivariate()
     # Fit MCMC posterior
     n_samples, n_adapts = 10_000, 2_000
 
-    #D = LogDensityProblems.dimension(model)
     D = 2*K*J+K+1
     θ_init = rand(rng, Normal(), D)
 
@@ -137,6 +133,8 @@ function run_example_bivariate()
 
     # Fit variational posterior
     posterior, ELBOs = fitBayesianSVARCopVI(rng, model, 5000, 15)
+
+    posterior, ELBOs = fitBayesianSVARCopVI_lkj(rng, model, 5000, 15)
     
     # Approximate the regression function via Monte Carlo by resampling ϵ
     f = estimate_mean_scenario_4(rng, x)

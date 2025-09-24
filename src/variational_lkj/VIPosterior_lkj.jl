@@ -1,5 +1,5 @@
 """
-    VIPosterior
+    VIPosterior_lkj
 
 Struct representing the multivariate normal variational posterior of θ.
 
@@ -9,54 +9,51 @@ Struct representing the multivariate normal variational posterior of θ.
 * `d`: Vector of diagonal entries of Δ in the covariance matrix expression BB' + Δ²
 * `J`: Number of regression coefficients per response dimension.
 * `K`: Dimension of the response, e.g. z_t has dimension R^K
-* `M_γ`: Dimension of γ.
 """
-struct VIPosterior{Mat<:AbstractMatrix{<:Real}}
+struct VIPosterior_lkj{Mat<:AbstractMatrix{<:Real}}
     μ::Vector{Float64}
     Bfac::Mat
     d::Vector{Float64}
     J::Int
     K::Int
-    M_γ::Int
 end
 
-function VIPosterior(D::Int, N_fac::Int, J::Int, K::Int, M_γ::Int)
+function VIPosterior_lkj(D::Int, N_fac::Int, J::Int, K::Int)
     μ = zeros(Float64, D)
     d = fill(1e-1, D)
     Bfac = fill(1e-3, (D, N_fac))
-    tril!(Bfac, -1) # sets upper triangle (including diagonal) of Bfac to 0.
-    return VIPosterior(μ, Bfac, d, J, K, M_γ)
+    tril!(Bfac, 0) # sets upper triangle (not including diagonal) of Bfac to 0.
+    return VIPosterior(μ, Bfac, d, J, K)
 end
 
-function Base.show(io::IO, posterior::VIPosterior)
+function Base.show(io::IO, posterior::VIPosterior_lkj)
     println(io, typeof(posterior))
     println(io, "μ: ", posterior.μ)
     println(io, "Bfac: ", posterior.Bfac)
     println(io, "d: ", posterior.d)
     println(io, "J: ", posterior.J)
     println(io, "K: ", posterior.K)
-    println(io, "M_γ: ", posterior.M_γ)
 end
 
 """
-    cov(posterior::VIPosterior)
+    cov(posterior::VIPosterior_lkj)
 
 Return the covariance matrix BB' + Δ² of the variational posterior.
 """
-function Distributions.cov(posterior::VIPosterior)
+function Distributions.cov(posterior::VIPosterior_lkj)
     return posterior.Bfac * transpose(posterior.Bfac) + Diagonal(map(abs2, posterior.d))
 end
 
 """
-    rand([rng=Random.default_rng()], posterior::VIPosterior)
-    rand([rng=Random.default_rng()], posterior::VIPosterior, n::Int)
+    rand([rng=Random.default_rng()], posterior::VIPosterior_lkj)
+    rand([rng=Random.default_rng()], posterior::VIPosterior_lkj, n::Int)
 
 Return one or several random samples of θ from the variational posterior q(θ; η).
 
 If the sample size `n` is not given, a single sample will be returned as a vector.
 If the sample size `n` is given, the result is stored as a dim(θ) × n matrix, so that θ[:, i] represents a single sample.
 """
-function Base.rand(rng::Random.AbstractRNG, posterior::VIPosterior)
+function Base.rand(rng::Random.AbstractRNG, posterior::VIPosterior_lkj)
     w1 = Base.rand(rng, Normal(), size(posterior.Bfac, 2))
     w2 = Base.rand(rng, Normal(), length(posterior.μ))
     θ = posterior.μ + posterior.Bfac * w1 + posterior.d .* w2
@@ -64,7 +61,7 @@ function Base.rand(rng::Random.AbstractRNG, posterior::VIPosterior)
 end
 Base.rand(posterior::VIPosterior) = rand(Random.default_rng(), posterior)
 
-function Base.rand(rng::Random.AbstractRNG, posterior::VIPosterior, n::Int)
+function Base.rand(rng::Random.AbstractRNG, posterior::VIPosterior_lkj, n::Int)
     if n ≤ 0
         throw(ArgumentError("Number of samples must be a positive number."))
     end
@@ -74,14 +71,14 @@ function Base.rand(rng::Random.AbstractRNG, posterior::VIPosterior, n::Int)
     end
     return θs
 end
-Base.rand(posterior::VIPosterior, n::Int) = rand(Random.default_rng(), posterior, n)
+Base.rand(posterior::VIPosterior_lkj, n::Int) = rand(Random.default_rng(), posterior, n)
 
 """
-    logpdf(posterior::VIPosterior, θ::AbstractVector{<:Real})
+    logpdf(posterior::VIPosterior_lkj, θ::AbstractVector{<:Real})
 
 Evaluate the (normalized) logpdf of the variational posterior at `θ`.
 """
-function Distributions.logpdf(posterior::VIPosterior, θ::AbstractVector{<:Real})
+function Distributions.logpdf(posterior::VIPosterior_lkj, θ::AbstractVector{<:Real})
     Bz_deps = θ - posterior.μ
     N_fac = size(posterior.Bfac, 2)
     d2 = 1.0 ./ posterior.d .^2
@@ -97,7 +94,7 @@ function Distributions.logpdf(posterior::VIPosterior, θ::AbstractVector{<:Real}
 end
 
 """
-    predict_response([rng=Random.default_rng()], posterior::VIPosterior, kdests::Vector{UnivariateKDE}, model::VARModel; N_mc::Int=200)
+    predict_response([rng=Random.default_rng()], posterior::VIPosterior_lkj, kdests::Vector{UnivariateKDE}, model::VARModel; N_mc::Int=200)
 
 Predict the responses on the observed scale (i.e. the y[t]), by sampling from the variational posterior.
 
@@ -114,25 +111,26 @@ Predict the responses on the observed scale (i.e. the y[t]), by sampling from th
 """
 function predict_response(
     rng::Random.AbstractRNG,
-    posterior::VIPosterior,
+    posterior::VIPosterior_lkj,
     kdests::Vector{T},
     model::VARModel;
-    N_mc::Int = 500
+    N_mc::Int = 200
 ) where {T <: UnivariateKDE}
     θ = rand(rng, posterior, N_mc)
     samples = [θ[:,i] for i in 1:N_mc]
     return predict_response(rng, samples, kdests, model)
 end
-predict_response(posterior::VIPosterior, kdests::Vector{T}, model::VARModel; N_mc::Int = 200) where {T<:UnivariateKDE} = predict_response(Random.default_rng(), posterior, kdests, model; N_mc=N_mc)
+predict_response(posterior::VIPosterior_lkj, kdests::Vector{T}, model::VARModel; N_mc::Int = 200) where {T<:UnivariateKDE} = predict_response(Random.default_rng(), posterior, kdests, model; N_mc=N_mc)
 
 function predict_response_plugin(
     rng::Random.AbstractRNG,
-    posterior::VIPosterior,
+    posterior::VIPosterior_lkj,
     kdests::Vector{T},
     model::VARModel;
-    N_mc::Int = 500
+    N_mc::Int = 200
 ) where {T <: UnivariateKDE}
     θ = rand(rng, posterior, N_mc)
     samples = [θ[:,i] for i in 1:N_mc]
     return predict_response_plugin(rng, samples, kdests, model)
 end
+predict_response_plugin(posterior::VIPosterior_lkj, kdests::Vector{T}, model::VARModel; N_mc::Int = 200) where {T<:UnivariateKDE} = predict_response_plugin(Random.default_rng(), posterior, kdests, model; N_mc=N_mc)

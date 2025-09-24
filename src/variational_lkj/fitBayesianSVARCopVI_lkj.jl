@@ -1,5 +1,5 @@
 """
-    fitBayesianSVARCopVI([rng=Random.default_rng()], model::VARModel, n_iter::Int, N_fac::Int; progress=true)
+    fitBayesianSVARCopVI_lkj([rng=Random.default_rng()], model::VARModel, n_iter::Int, N_fac::Int; progress=true)
 
     Fit the BayesianSVAR model to a VARModel object using variational inference.
 
@@ -11,11 +11,10 @@
 # Keyword Arguments
 * `progress`: If set to true, a simple progressbar is shown.
 """
-function fitBayesianSVARCopVI(rng::Random.AbstractRNG, model::VARModel, n_iter::Int, N_fac::Int; progress=true)
+function fitBayesianSVARCopVI_lkj(rng::Random.AbstractRNG, model::VARModel, n_iter::Int, N_fac::Int; progress=true)
     J = model.J
     K = model.K
-    M_γ = K*model.M - div(model.M*(model.M+1), 2) + model.M
-    D = 2*K*J + K + M_γ
+    D = 2*K*J + K + 1
 
     # Initialize variational parameters:
     μ = zeros(Float64, D)
@@ -55,7 +54,7 @@ function fitBayesianSVARCopVI(rng::Random.AbstractRNG, model::VARModel, n_iter::
 
     # Perform SGA iterations
     for it in 1:n_iter
-        ELBOs[it], μ, Bfac, d, ADA, Siginvpart, L_μ, L_B, L_d = adadelta_step(rng, model, μ, Bfac, d, N_fac, Siginvpart, ADA)
+        ELBOs[it], μ, Bfac, d, ADA, Siginvpart, L_μ, L_B, L_d = adadelta_step_lkj(rng, model, μ, Bfac, d, N_fac, Siginvpart, ADA)
         if !isnothing(pm)
             next!(pm; showvalues=[("ELBO", ELBOs[it])])
         end
@@ -71,7 +70,7 @@ function fitBayesianSVARCopVI(rng::Random.AbstractRNG, model::VARModel, n_iter::
     Bfac_c = Bfac_c / n_avg
     d_c = d_c / n_avg
     
-    return VIPosterior(μ_c, Bfac_c, d_c, J, K, M_γ), ELBOs
+    return VIPosterior_lkj(μ_c, Bfac_c, d_c, J, K), ELBOs
 end
 
 # Fallback version in case no seed was explicitly provided

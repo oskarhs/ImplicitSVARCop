@@ -36,7 +36,7 @@ function composite_gibbs_abstractmcmc_lkj(rng::Random.AbstractRNG, model::VARMod
     Mlik = reshape(inv_Sz, (Tsubp, K)) - XB
     vec_MliktMlik_t = transpose(vec(Mlik' * Mlik))
     state_ρ = nothing
-    atanh_ρ, state_ρ = abstractmcmc_sample_ρ(rng, sampler_ρ, state_ρ, atanh_ρ, β, P_root, Mlik, vec_MliktMlik_t, J, K, Tsubp, M; n_adapts=n_adapts)
+    atanh_ρ, state_ρ = abstractmcmc_sample_ρ(rng, sampler_ρ, state_ρ, atanh_ρ, β, P_root, Mlik, vec_MliktMlik_t, J, K, Tsubp; n_adapts=n_adapts)
 
     # Upate inverse covariance matrix
     inv_Σ = compute_inv_Σ_ρ(atanh_ρ)
@@ -72,7 +72,7 @@ function composite_gibbs_abstractmcmc_lkj(rng::Random.AbstractRNG, model::VARMod
         
 
         # For now, just leave γ as is (we run on 1D examples, so this parameter has no effect)
-        atanh_ρ, state_ρ = abstractmcmc_sample_ρ(rng, sampler_ρ, state_ρ, atanh_ρ, β, P_root, Mlik, vec_MliktMlik_t, J, K, Tsubp, M; n_adapts=n_adapts)
+        atanh_ρ, state_ρ = abstractmcmc_sample_ρ(rng, sampler_ρ, state_ρ, atanh_ρ, β, P_root, Mlik, vec_MliktMlik_t, J, K, Tsubp; n_adapts=n_adapts)
 
         inv_Σ = compute_inv_Σ_ρ(atanh_ρ)
         

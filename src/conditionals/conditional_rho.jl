@@ -1,6 +1,5 @@
 function compute_inv_Σ_ρ(atanh_ρ::AbstractVector{<:Real})
     ρ = tanh(atanh_ρ[1])
-    #Σ = Symmetric([1.0 ρ*(1-1e-10); ρ*(1-1e-10) 1.0]) # For increased numerical stability
     inv_Σ = Symmetric([1.0 -ρ; -ρ 1.0]) / (1-ρ^2)
     return inv_Σ
 end
@@ -39,7 +38,7 @@ function logp_conditional_ρ(atanh_ρ::AbstractVector{<:Real}, inv_Σ::AbstractM
     return logp
 end
 
-function logp_conditional_ρ_autodiff(atanh_ρ::AbstractVector{<:Real}, β::AbstractVector, P_root::AbstractArray, Mlik::AbstractArray, M::Int, J::Int, K::Int, Tsubp::Int)
+function logp_conditional_ρ_autodiff(atanh_ρ::AbstractVector{<:Real}, β::AbstractVector, P_root::AbstractArray, Mlik::AbstractArray, J::Int, K::Int, Tsubp::Int)
     inv_Σ = compute_inv_Σ_ρ(atanh_ρ)
     return logp_conditional_ρ(atanh_ρ, inv_Σ, β, P_root, Mlik, J, K, Tsubp)
 end
@@ -53,7 +52,7 @@ Function for computing the gradient of the log-conditional density log p(ρ | �
 * `atanh_ρ`: Unconstrained parameter vector that parametrizes the covariance matrix.
 * `inv_Σ`: The inverse of the covariance matrix corresponding to γ, e.g. inv_Σ = inv(Σ(v)).
 """
-function grad_logp_conditional_ρ(atanh_ρ::AbstractVector{<:Real}, β::AbstractArray, P_root::AbstractArray, vec_MliktMlik_t::AbstractArray, M::Int, J::Int, K::Int, Tsubp::Int)
+function grad_logp_conditional_ρ(atanh_ρ::AbstractVector{<:Real}, β::AbstractArray, P_root::AbstractArray, vec_MliktMlik_t::AbstractArray, J::Int, K::Int, Tsubp::Int)
     η = 1
 
     #Σ = Symmetric([1.0 tanh(atanh_ρ[1]); tanh(atanh_ρ[1]) 1.0])
@@ -93,19 +92,18 @@ struct Conditional_ρ{T<:AbstractMatrix{<:Real}, S<:AbstractMatrix{<:Real}}
     J::Int
     K::Int
     Tsubp::Int
-    M::Int
 end
 LogDensityProblems.dimension(cond::Conditional_ρ) = 1
 LogDensityProblems.capabilities(::Type{<:Conditional_ρ}) = LogDensityProblems.LogDensityOrder{1}() # We can provide the gradient
 
 function LogDensityProblems.logdensity(cond::Conditional_ρ, atanh_ρ)
-    (; β, P_root, Mlik, vec_MliktMlik_t, J, K, M, Tsubp) = cond
-    return logp_conditional_ρ_autodiff(atanh_ρ, β, P_root, Mlik, M, J, K, Tsubp)
+    (; β, P_root, Mlik, vec_MliktMlik_t, J, K, Tsubp) = cond
+    return logp_conditional_ρ_autodiff(atanh_ρ, β, P_root, Mlik, J, K, Tsubp)
 end
 function LogDensityProblems.logdensity_and_gradient(cond::Conditional_ρ, atanh_ρ) # Can be optimized, there is some overlap with logdensity calculation
-    (; β, P_root, Mlik, vec_MliktMlik_t, J, K, M, Tsubp) = cond
-    logp = logp_conditional_ρ_autodiff(atanh_ρ, β, P_root, Mlik, M, J, K, Tsubp)
-    grad = grad_logp_conditional_ρ(atanh_ρ, β, P_root, vec_MliktMlik_t, M, J, K, Tsubp)
+    (; β, P_root, Mlik, vec_MliktMlik_t, J, K, Tsubp) = cond
+    logp = logp_conditional_ρ_autodiff(atanh_ρ, β, P_root, Mlik, J, K, Tsubp)
+    grad = grad_logp_conditional_ρ(atanh_ρ, β, P_root, vec_MliktMlik_t, J, K, Tsubp)
     return logp, grad
 end
 
@@ -124,12 +122,11 @@ function abstractmcmc_sample_ρ(
     vec_MliktMlik::AbstractArray{<:Real},
     J::Int,
     K::Int,
-    Tsubp::Int,
-    M::Int;
+    Tsubp::Int;
     n_adapts::Int
 )   
     # Create target LogDensityModel
-    Cond = AbstractMCMC.LogDensityModel(Conditional_ρ(β, P_root, Mlik, vec_MliktMlik, J, K, Tsubp, M))
+    Cond = AbstractMCMC.LogDensityModel(Conditional_ρ(β, P_root, Mlik, vec_MliktMlik, J, K, Tsubp))
     if isnothing(state_ρ)
         transition_ρ, state_ρ = AbstractMCMC.step(rng, Cond, sampler_ρ; initial_params=atanh_ρ, n_adapts=n_adapts)
     else

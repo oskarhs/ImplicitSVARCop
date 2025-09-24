@@ -3,54 +3,67 @@ include(joinpath(@__DIR__, "..", "src", "ImplicitSVARCop.jl"))
 using .ImplicitSVARCop
 
 function run_bivariate_var_example()
-    rng = Random.Xoshiro(1)
+    rng = Random.Xoshiro(2)
 
     # First case h₂(x)
     # Simulate the data:
-    n = 500
+    T = 5000
     corr = 0.2
-    x, y = simulate_scenario_4(rng, n; corr=corr)
+    # Order of VAR process
+    p = 2
+
+    x, y = simulate_VARdata(rng, T; corr=corr, p = p)
 
     order = 4
     dim_basis = 25
-    F = hcat(
-        B_spline_basis_matrix(x[:,1], order, dim_basis),
-        B_spline_basis_matrix(x[:,2], order, dim_basis)
-    )
-
+    
     # Estimate marginal density and transform data to latent scale:
     My = copy(y)
     Mz_est, kdests = fit_marginals(My, SSVKernel())
     z_est = vec(Mz_est)
 
+    # Design matrix (remember, lags should be in descending order when mobing from left to right)
+    F = hcat(
+        Mz_est[1:T-2,:], # Lag 2, as in paper
+        Mz_est[2:T-1,:], # Lag 1, as in paper
+        B_spline_basis_matrix(x[p+1:T,1], order, dim_basis),
+        B_spline_basis_matrix(x[p+1:T,2], order, dim_basis)
+    )
+
     # Create VARModel object:
     K = 2
-    J = K*dim_basis
+    J = K*dim_basis+K*p
     M = 1
     df_ξ = 1.0
-    model = VARModel(z_est, F, K, J, M, n; df_ξ=df_ξ)
+    model = VARModel(vec(Mz_est[p+1:end,:]), F, K, J, M, T-p; df_ξ=df_ξ)
 
     # Fit MCMC posterior
     n_samples, n_adapts = 10_000, 2_000
 
     #D = LogDensityProblems.dimension(model)
-    D = 2*K*J+K+1
+    D = 2*K*J + K + div(K*(K-1), 2)
     θ_init = rand(rng, Normal(), D)
 
-    sampler_ξ = NUTS(0.7)
-    sampler_ρ = NUTS(0.7)
+    sampler_ξ = NUTS(0.75)
+    sampler_ρ = NUTS(0.75)
     samples = composite_gibbs_abstractmcmc_lkj(rng, model, sampler_ξ, sampler_ρ, θ_init, n_samples; n_adapts=n_adapts, progress=true)
 
-    chain = MCMCChains.Chains(samples[n_adapts:end], get_varsymbols(model))
+    chain = MCMCChains.Chains(samples[n_adapts:end], ImplicitSVARCop.get_varsymbols_lkj(model))
     describe(chain)
 
-    chain = MCMCChains.Chains(samples[n_adapts:end])
-    plot(chain, :param_203)
-    mean(tanh.(chain[:param_203].data))
-    density(tanh.(chain[:param_203].data))
+    mean(tanh.(chain[Symbol("atanh_ρ[1]")].data))
 
     # Fit variational posterior
     posterior, ELBOs = fitBayesianSVARCopVI(rng, model, 5000, 15)
+
+    posterior, ELBOs = fitBayesianSVARCopVI_lkj(rng, model, 5000, 10)
+
+    t = LinRange(-1+1e-10, 1-1e-10, 1001)
+    μ = posterior.μ[end]
+    σ = sqrt(cov(posterior)[end,end])
+    p = density(tanh.(chain[Symbol("atanh_ρ[1]")].data), label="MCMC", xlims=[0.0, 0.4])
+    plot!(p, t, pdf.(Normal(μ, σ), atanh.(t))./(1 .- abs2.(t)), label="VI")
+
     
     # Approximate the regression function via Monte Carlo by resampling ϵ
     f = estimate_mean_scenario_4(rng, x)
@@ -79,11 +92,10 @@ function run_bivariate_var_example()
     println(sqrt(mean((f - y_pred_MCMC).^2))) # RMSE of predictions based on true model
 end
 
-
-function simulate_VARdata(rng::Random.AbstractRNG, n_sim::Int; corr::Real)
+# This only accepts p=2 as a valid argument
+function simulate_VARdata(rng::Random.AbstractRNG, T::Int; corr::Real, p::Int)
     r2 = 0.47 # Perhaps we need to adjust these to get a more favorable SNR ratio.
     r3 = 0.58
-    p = 2
 
     # True parameters
     D = Diagonal([r2, r3])
@@ -96,17 +108,19 @@ function simulate_VARdata(rng::Random.AbstractRNG, n_sim::Int; corr::Real)
         0.4 0.4
     ]
 
-    ϵ = transpose(rand(rng, MvNormal(zeros(2), V_ϵ), n_sim))
+    ϵ = transpose(rand(rng, MvNormal(zeros(2), V_ϵ), T))
     
     # Simulate from a copula to introduce dependence between covariates
-    x = transpose(cdf.(Normal(), rand(rng, MvNormal(zeros(2), [1.0 0.4; 0.4 1.0]), n_sim)))
+    x = transpose(cdf.(Normal(), rand(rng, MvNormal(zeros(2), [1.0 0.4; 0.4 1.0]), T)))
 
     # Copula scale:
-    z = zeros((n_sim, 2))
-    for t in p+1:n_sim
-        z[t,:] = transpose(vcat(z[t-2,:], z[t-1,:])) * βmat + hcat(h2(x[t,1]), h3(x[t,2])) + transpose(ϵ[t,:])
+    z = zeros((T, 2))
+    z[1,:] = rand(rng, MvNormal(zeros(2), I))
+    z[2,:] = rand(rng, MvNormal(zeros(2), I))
+    for t in p+1:T
+        z[t,:] = transpose(vcat(z[t-2,:], z[t-1,:])) * βmat + hcat(h2(x[t,1]), h3(x[t,2])) + transpose(ϵ[t,:]) # NB! everything on the RHS is a row vector
     end
-    z = z + h_bivariate(x)
+    # Estimate marginal mean, variance of z
     u = cdf(Normal(), z)
     y = quantile(Gamma(3, 2), u)
     return x, y

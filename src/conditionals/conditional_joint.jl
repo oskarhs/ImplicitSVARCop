@@ -185,3 +185,39 @@ function logp_and_grad_joint(model::VARModel, θ::AbstractVector)
 
     return logp, grad_θ
 end
+
+
+
+# Evaluate the joint logposterior density, where intermediate quantities that can be reused for gradients have been precomputed.
+function logp_unpacked_params_lkj(log_ξ, ξ, log_τ, τ, atanh_ρ, C, inv_S_vec, P_root, P_rootβrs, Mlik, K, J, Tsubp, a_γ, b_γ, df = 1) # NB! Σ itself is not needed, only its Cholesky decomp.
+    η = 1.0
+    
+    # Start computing the logdensity
+    logp = 0.0
+
+    # Contribution from log p(τ)
+    f1 = let J = J
+        log_τ -> -(J-1.0)*log_τ - log(1.0 + exp(2.0*log_τ))
+    end
+    logp += vsum(f1, log_τ)
+
+    # Contribution from log p(ξ | τ)
+    logp += vsum(log_ξ .- 0.5 * (df+1.0) * log.(1.0 .+ (ξ ./ τ[repeat(1:K, inner=J)]).^2 / df))
+    #logp += vsum(log_ξ .- log.(1.0 .+ (ξ ./ τ[repeat(1:K, inner=J)]).^2))
+
+    # Contribution from log p(ρ)
+    logp += sech(atanh_ρ[1])^(2*η)
+
+    # Contribution from log p(β | g, ξ)
+    #temp1 = reshape(P_root * β, (J, K)) * C
+    temp1 = P_rootβrs * C
+    logp += J*logdet(C)
+    logp -= 0.5*vsum(abs2, temp1)
+
+    # Contribution from likelihood
+    temp2 = Mlik * C
+    logp += vsum(log, inv_S_vec) + logdet(P_root) + Tsubp * logdet(C)
+    logp -= 0.5*vsum(abs2, temp2)
+
+    return logp
+end

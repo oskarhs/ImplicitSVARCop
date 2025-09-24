@@ -36,6 +36,8 @@ export B_spline_basis_matrix
 include(joinpath("helpers", "fit_marginals.jl"))
 export fit_marginals
 
+include(joinpath("helpers", "predict_response.jl"))
+export predict_response, predict_response_plugin
 
 include(joinpath("conditionals", "conditional_beta.jl"))
 #include(joinpath("conditionals_igprior", "conditional_beta.jl"))
@@ -74,7 +76,13 @@ include(joinpath("variational", "grad_elbo.jl"))
 include(joinpath("variational", "adadelta_step.jl"))
 include(joinpath("variational", "VIPosterior.jl"))
 include(joinpath("variational", "fitBayesianSVARCopVI.jl"))
-export VIPosterior, fitBayesianSVARCopVI, logpdf, predict_response, predict_response_plugin
+export VIPosterior, fitBayesianSVARCopVI, logpdf, predict_response, predict_response_plugin, cov
+
+include(joinpath("variational_lkj", "grad_elbo_lkj.jl"))
+include(joinpath("variational_lkj", "adadelta_step_lkj.jl"))
+include(joinpath("variational_lkj", "VIPosterior_lkj.jl"))
+include(joinpath("variational_lkj", "fitBayesianSVARCopVI_lkj.jl"))
+export VIPosterior_lkj, fitBayesianSVARCopVI_lkj, logpdf, predict_response, predict_response_plugin, cov
 
 
 include(joinpath("mcmc", "composite_gibbs_mh.jl"))

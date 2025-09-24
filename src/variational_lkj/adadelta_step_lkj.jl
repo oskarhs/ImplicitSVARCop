@@ -1,4 +1,5 @@
-"""
+# THIS IS NOT NEEDED SO LONG AS THE FACTOR VI PRIOR IS INCLUDED
+#= """
     ADADELTAState
 
 Struct storing the current state of the ADADELTA algorithm.
@@ -12,7 +13,7 @@ struct ADADELTAState
     Eg2_B::Matrix{Float64}
     Eδ2_d::Vector{Float64}
     Eg2_d::Vector{Float64}
-end
+end =#
 
 
 """
@@ -39,7 +40,7 @@ Function for executing one step of the adadelta algorithm.
 * `Siginvpart`: Current value of the inverse covariance matrix inv(BB' + Δ²)
 * `ADA`: Object holding the updated state of the ADADELTA optimizer.
 """
-function adadelta_step(
+function adadelta_step_lkj(
     rng::Random.AbstractRNG,
     model::VARModel,
     μ::AbstractVector{<:Real}, 
@@ -67,7 +68,7 @@ function adadelta_step(
     
     θ = μ + Bfac * w1 + d .* w2
 
-    L_μ, L_B, L_d, logp = grad_and_logp_elbo(model, θ, Bfac, d, w1, w2, Siginvpart) # get gradients and logdensity
+    L_μ, L_B, L_d, logp = grad_and_logp_elbo_lkj(model, θ, Bfac, d, w1, w2, Siginvpart) # get gradients and logdensity
 
     # Set upper triangle of L_B (not including diagonal) to 0:
     tril!(L_B, 0)
