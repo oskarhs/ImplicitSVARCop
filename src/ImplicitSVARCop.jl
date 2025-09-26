@@ -1,7 +1,7 @@
 module ImplicitSVARCop
 
 # Package imports
-using Distributions, Random, LinearAlgebra, SliceSampling
+using Distributions, Random, LinearAlgebra, SliceSampling, RCall
 import Polyester: @batch
 import LoopVectorization: @turbo, vsum, vmap
 import SparseArrays: sparse

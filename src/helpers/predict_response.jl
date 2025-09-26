@@ -16,7 +16,7 @@ Predict the responses on the observed scale (i.e. the y[t]), from a posterior sa
 """
 function predict_response(
     rng::Random.AbstractRNG,
-    posterior_samples::Vector{Vector{Float64}},
+    posterior_samples::Vector{<:AbstractVector{<:Real}},
     kdests::Vector{T},
     model::VARModel
 ) where {T <: UnivariateKDE}
@@ -84,7 +84,7 @@ This function is significantly faster than `predict_response`, owing to the fact
 """
 function predict_response_plugin(
     rng::Random.AbstractRNG,
-    posterior_samples::Vector{Vector{Float64}},
+    posterior_samples::Vector{<:AbstractVector{<:Real}},
     kdests::Vector{T},
     model::VARModel
 ) where {T <: UnivariateKDE}
@@ -103,10 +103,16 @@ function predict_response_plugin(
     ϵ_bar = mean(ϵ)
     β_hat = mean(hcat(posterior_samples...)[1:K*J,:], dims=2)
     βmat = reshape(β_hat, (J, K))
-    ξ2_hat = mean(exp.(2.0*hcat(posterior_samples...)[K*J+1:2*K*J,:]), dims=2)
-    ξ2mat = reshape(ξ2_hat, (J, K))
+    #ξ2_hat = mean(exp.(2.0*hcat(posterior_samples...)[K*J+1:2*K*J,:]), dims=2)
+    #ξ2 = exp.(2.0*hcat(posterior_samples...)[K*J+1:2*K*J,:])
+    #ξ2mat = reshape(ξ2_hat, (J, K))
     for t in 1:Tsubp
-        s_vec = 1.0 ./ sqrt.( 1.0 .+ vec( transpose(@views model.F_sq[t,:]) * ξ2mat ) )
+        #s_vec = mean(1.0 ./ sqrt.( 1.0 .+ vec( transpose(@views model.F_sq[t,:]) * ξ2mat ) ) )
+        s_vec = zeros(Float64, K)
+        for i in eachindex(posterior_samples)
+            ξ2_i = reshape(exp.(2.0*posterior_samples[i][K*J+1:2*K*J]), (J, K))
+            s_vec .+= 1/length(posterior_samples) * 1.0 ./ sqrt.( 1.0 .+ vec( transpose(@views model.F_sq[t,:]) * ξ2_i ) )
+        end
         μ = s_vec .* vec(transpose(@views model.F[t,:]) * βmat)
         for k in 1:K
             #z_t_k = Base.rand(rng, Normal(μ[k], s_vec[k]), N_mc_z)

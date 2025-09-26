@@ -1,9 +1,6 @@
-using Random, Distributions, SliceSampling, AdvancedHMC
+using Random, Distributions, SliceSampling, AdvancedHMC, LinearAlgebra
 include(joinpath(@__DIR__, "..", "src", "ImplicitSVARCop.jl"))
 using .ImplicitSVARCop
-include(joinpath(@__DIR__, "..", "src", "composite_gibbs.jl"))
-include(joinpath(@__DIR__, "..", "src", "nuts_step.jl"))
-include(joinpath(@__DIR__, "..", "src", "nuts_step2.jl"))
 
 
 
@@ -140,7 +137,7 @@ end
 function test_AR1_cov()
     rng = Random.default_rng()
     p = 1          # order
-    T = 20   # number of observations
+    T = 1000   # number of observations
     J = 2 # Number of covariates per variable
     K = 1 # Dimension of response
     M = 1
@@ -174,7 +171,7 @@ function test_AR1_cov()
     #sampler = NUTS(0.8)
     sampler = RandPermGibbs(SliceDoublingOut(2.0; max_proposals=10^4))
     
-    samples = composite_gibbs_abstractmcmc(rng, model, sampler, θ_init, n_samples; n_adapts = n_adapts, progress = true)
+    samples = composite_gibbs_abstractmcmc(rng, model, sampler, sampler, θ_init, n_samples; n_adapts = n_adapts, progress = true)
     #samples = composite_gibbs_mh(rng, model, θ_init, n_samples)
     #samples = composite_gibbs_vi(rng, model, θ_init, N_fac, N_iter_vi, n_samples)
 
@@ -220,10 +217,11 @@ function test_AR1_cov()
     # get predictions
     y_pred = Vector{Float64}(undef, Tsubp)
     y_best_true = Vector{Float64}(undef, Tsubp)
+    newdata = VARModel(z, F, K, J, M, Tsubp)
+    y_pred = predict_response_plugin(rng, samples[n_adapts+1:end], [kdest], newdata)
     for t in 1:Tsubp
         #z_pred_t = mean(F[t] * β_chain)                      # first predict on latent scale
         #y_pred[t] = quantile(marg, cdf.(Normal(), z_pred_t)) # revert to observed scale
-        y_pred[t] = predict_obs_mcmc(rng, kdest, F[t,:], samples, J, K)[1,1]
         #y_best_true[t] = quantile(Exponential(4.0), cdf.(Normal(0.0, 1.0/sqrt(1.0-a^2)), z_new[t])) # best prediction based on true modely_best_true[t]
         y_best_true[t] = estimate_best_true_var1_cov(rng, d_true, [z_new[t], x_exo_new[t]], β)
     end

@@ -59,7 +59,7 @@ function Base.rand(rng::Random.AbstractRNG, posterior::VIPosterior_lkj)
     θ = posterior.μ + posterior.Bfac * w1 + posterior.d .* w2
     return θ
 end
-Base.rand(posterior::VIPosterior) = rand(Random.default_rng(), posterior)
+Base.rand(posterior::VIPosterior_lkj) = rand(Random.default_rng(), posterior)
 
 function Base.rand(rng::Random.AbstractRNG, posterior::VIPosterior_lkj, n::Int)
     if n ≤ 0

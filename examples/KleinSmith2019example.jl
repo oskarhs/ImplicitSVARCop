@@ -1,6 +1,8 @@
-using Random, Distributions, BSplineKit, StatsPlots, AdvancedHMC, LogDensityProblems, MCMCChains, LinearAlgebra, ForwardDiff, SliceSampling, AbstractMCMC
+using Random, Distributions, BSplineKit, StatsPlots, AdvancedHMC, LogDensityProblems, MCMCChains, LinearAlgebra, ForwardDiff, SliceSampling, AbstractMCMC, RCall, DataFrames
 include(joinpath(@__DIR__, "..", "src", "ImplicitSVARCop.jl"))
 using .ImplicitSVARCop
+
+@rlibrary mgcv
 
 """
 The following example is taken from Klein & Smith (2019), Implicit Copulas from Bayesian Regularized Regression Smoothers.
@@ -12,7 +14,7 @@ function run_example()
     rng = Random.Xoshiro(1)
 
     # Simulate the data:
-    n = 100
+    n = 500
     x, y = simulate_scenario_2(rng, n)
     #x, y = simulate_scenario_3(rng, n)
 
@@ -90,8 +92,8 @@ function run_example_bivariate()
     rng = Random.Xoshiro(1)
 
     # Simulate the data:
-    n = 1000
-    corr = 0.5
+    n = 500
+    corr = 0.2
     x, y = simulate_scenario_4(rng, n; corr=corr)
 
     order = 4
@@ -119,31 +121,43 @@ function run_example_bivariate()
     D = 2*K*J+K+1
     θ_init = rand(rng, Normal(), D)
 
-    sampler_ξ = NUTS(0.7)
-    sampler_ρ = NUTS(0.7)
+    sampler_ξ = NUTS(0.75)
+    sampler_ρ = NUTS(0.75)
     samples = composite_gibbs_abstractmcmc_lkj(rng, model, sampler_ξ, sampler_ρ, θ_init, n_samples; n_adapts=n_adapts, progress=true)
 
-    chain = MCMCChains.Chains(samples[n_adapts:end], get_varsymbols(model))
+    chain = MCMCChains.Chains(samples[n_adapts:end], ImplicitSVARCop.get_varsymbols_lkj(model))
     describe(chain)
 
-    chain = MCMCChains.Chains(samples[n_adapts:end])
-    plot(chain, :param_203)
-    mean(tanh.(chain[:param_203].data))
-    density(tanh.(chain[:param_203].data))
+    mean(tanh.(chain[Symbol("atanh_ρ[1]")].data))
+    density(tanh.(chain[Symbol("atanh_ρ[1]")].data))
 
     # Fit variational posterior
     posterior, ELBOs = fitBayesianSVARCopVI(rng, model, 5000, 15)
 
     posterior, ELBOs = fitBayesianSVARCopVI_lkj(rng, model, 5000, 15)
+
+    # Fit MGCV model
+    df = DataFrame(z1 = Mz_est[:,1], z2 = Mz_est[:,2], x1 = x[:,1], x2 = x[:,2])
+    df_R = robject(df)
+    rcormat = R"""
+        fit = mgcv::gam(list(z1 ~ s(x1) + s(x2), z2 ~ s(x1) + s(x2)), family = mgcv::mvn(d=2), data=$df_R)
+        covmat = solve(crossprod(fit[['family']][['data']][['R']]))
+        cov2cor(covmat)
+    """
+    mgcvcorr = rcopy(rcormat)
     
     # Approximate the regression function via Monte Carlo by resampling ϵ
-    f = estimate_mean_scenario_4(rng, x)
+    f = estimate_mean_scenario_4(rng, x; corr = corr)
 
     # Get new predictions
     newdata = VARModel(z_est, F, K, J, M, n)
     y_pred_VI = predict_response_plugin(rng, posterior, kdests, newdata; N_mc = 500)
 
     y_pred_MCMC = predict_response_plugin(rng, samples[n_adapts+1:end], kdests, newdata)
+    vi_samp = rand(rng, posterior, 100)
+    y_pred_VI = predict_response_plugin(rng, convert(Vector{Vector{Float64}}, Vector(eachcol(vi_samp))), kdests, newdata)
+
+    y_pred_MCMC = predict_response(rng, samples[n_adapts+1:end], kdests, newdata)
 
     # Plotting
     pl = []
@@ -161,6 +175,9 @@ function run_example_bivariate()
     println(sqrt(mean((f - y_pred_VI).^2)))   # RMSE of model
     println(sqrt(mean((f .- mean(y)).^2))) # RMSE of null model
     println(sqrt(mean((f - y_pred_MCMC).^2))) # RMSE of predictions based on true model
+
+    println(sqrt(mean((f[:,1] .- mean(y[:,1])).^2))) # RMSE of null model
+    println(sqrt(mean((f[:,1] - y_pred_MCMC[:,1]).^2))) # RMSE of predictions based on true model
 end
 
 function simulate_scenario_2(rng::Random.AbstractRNG, n_sim::Int)

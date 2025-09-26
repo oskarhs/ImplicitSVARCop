@@ -74,7 +74,7 @@ function composite_gibbs_abstractmcmc(rng::Random.AbstractRNG, model::VARModel, 
 
         # For now, just leave γ as is (we run on 1D examples, so this parameter has no effect)
         #γ = γ
-        γ, state_γ = abstractmcmc_sample_γ(rng, sampler_γ, state_γ, γ, β, P_root, Mlik, vec_MliktMlik_t, J, K, Tsubp, M, M_γ; n_adapts)
+        #γ, state_γ = abstractmcmc_sample_γ(rng, sampler_γ, state_γ, γ, β, P_root, Mlik, vec_MliktMlik_t, J, K, Tsubp, M, M_γ; n_adapts)
 
         inv_Σ = inv(compute_Σ(γ, K, M)) # can invert this using Woodbury later.
 
