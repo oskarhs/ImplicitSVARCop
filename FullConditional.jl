@@ -12,17 +12,12 @@ This sampler expects the user to implement a `rand(rng, problem)` for the target
 struct MyIsotropicNormal
     dim::Int64
 end
-LogDensityProblems.dimension(model::MyIsotropicNormal) = model.dim
 
-# This has to be implemented for the LogDensityProblems interface, use [`@fullconditional`](@ref) to skip the implementation of these methods.
-LogDensityProblems.logdensity(::MyIsotropicNormal, x) = 0.0                                    # Since we don't use this for sampling, we can set an arbitrary value here
-LogDensityProblems.capabilities(::Type{MyIsotropicNormal}) = LogDensityProblems.LogDensityOrder{0}() # Set order to 0 so we don't have to implement derivatives too.
+# To sample from a full conditional density, all we have to do is to define a rand metod.
+Base.rand(rng::Random.AbstractRNG, fc::MyIsotropicNormal) = Base.rand(rng, MvNormal(zeros(fc.dim), I))
 
-# Implement rand method:
-Base.rand(rng::Random.AbstractRNG, model::MyIsotropicNormal) = rand(rng, MvNormal(zeros(model.dim), Diagonal(ones(model.dim))))
-
-# Wrap model in a LogDensityModel and sample:
-model = AbstractMCMC.LogDensityModel(MyIsotropicNormal(2))
+# Wrap the full conditional object in a FullConditionalModel and sample:
+model = FullConditionalModel(MyIsotropicNormal(2))
 samples = AbstractMCMC.sample(Random.default_rng(), model, FullConditional(), 10^3; init_params=zeros(2))
 ```
 """
@@ -35,25 +30,49 @@ end
 AbstractMCMC.getparams(state::FullConditionalState) = state.params
 AbstractMCMC.getparams(::AbstractMCMC.AbstractModel, state::FullConditionalState) = state.params
 
-AbstractMCMC.setparams!!(state::FullConditionalState, params) = FullConditionalState(params)
-AbstractMCMC.setparams!!(::AbstractMCMC.AbstractModel, state::FullConditionalState, params) = FullConditionalState(params)
+AbstractMCMC.setparams!!(::FullConditionalState, params) = FullConditionalState(params)
+AbstractMCMC.setparams!!(::AbstractMCMC.AbstractModel, ::FullConditionalState, params) = FullConditionalState(params)
 
-function AbstractMCMC.step(rng::Random.AbstractRNG, model::AbstractMCMC.AbstractModel, fullcond::FullConditional; kwargs...)
+"""
+    FullConditionalModel <: AbstractMCMC.AbstractModel
+
+Wrapper around a full conditional density from which we can draw exact samples.
+
+# Fields
+* `fc`: An object which implements the `Base.rand(rng, fc)` method.
+"""
+struct FullConditionalModel{M} <: AbstractMCMC.AbstractModel
+    fc::M
+    function FullConditionalModel(fc::M) where {M}
+        if !(hasmethod(Base.rand, Tuple{Random.AbstractRNG, M}))
+            throw(ArgumentError("The given full conditional object does not implement `Base.rand(rng, fc)`."))
+        end
+        return new{M}(fc)
+    end
+end
+
+function AbstractMCMC.step(rng::Random.AbstractRNG, model::FullConditionalModel, ::FullConditional; kwargs...)
+    # Just call rand(rng, model.logdensity) and call it a day
+    newparams = Base.rand(rng, model.fc)
+    return newparams, FullConditionalState(newparams)
+end
+AbstractMCMC.step(rng::Random.AbstractRNG, model::FullConditionalModel, sampler::FullConditional, state::FullConditionalState; kwargs...) = AbstractMCMC.step(rng, model, sampler; kwargs...)
+
+# Step model for LogDensityModels that also implement a rand method.
+function AbstractMCMC.step(rng::Random.AbstractRNG, model::AbstractMCMC.LogDensityModel, ::FullConditional; kwargs...)
     # Just call rand(rng, model.logdensity) and call it a day
     newparams = Base.rand(rng, model.logdensity)
     return newparams, FullConditionalState(newparams)
 end
-AbstractMCMC.step(rng::Random.AbstractRNG, model::AbstractMCMC.AbstractModel, fullcond::FullConditional, state::FullConditionalState; kwargs...) = AbstractMCMC.step(rng, model, fullcond; kwargs...)
-#= struct MyIsotropicNormal
+AbstractMCMC.step(rng::Random.AbstractRNG, model::AbstractMCMC.LogDensityModel, sampler::FullConditional, state::FullConditionalState; kwargs...) = AbstractMCMC.step(rng, model, sampler; kwargs...)
+
+struct MyIsotropicNormal
     dim::Int64
 end
-LogDensityProblems.logdensity(::MyIsotropicNormal, x) = 0.0
-LogDensityProblems.dimension(model::MyIsotropicNormal) = model.dim
-LogDensityProblems.capabilities(::Type{MyIsotropicNormal}) = LogDensityProblems.LogDensityOrder{0}()
+Base.rand(rng::Random.AbstractRNG, fc::MyIsotropicNormal) = rand(rng, MvNormal(zeros(fc.dim), I))
+model = FullConditionalModel(MyIsotropicNormal(2))
 
-model = AbstractMCMC.LogDensityModel(MyIsotropicNormal(2))
-
-samples = AbstractMCMC.sample(Random.default_rng(), model, FullConditional(), 100000; init_params=zeros(2)); =#
+samples = AbstractMCMC.sample(Random.default_rng(), model, FullConditional(), 100000; init_params=zeros(2));
 
 
 
