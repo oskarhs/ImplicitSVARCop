@@ -189,7 +189,7 @@ end
 
 
 # Evaluate the joint logposterior density, where intermediate quantities that can be reused for gradients have been precomputed.
-function logp_unpacked_params_lkj(log_ξ, ξ, log_τ, τ, atanh_ρ, C, inv_S_vec, P_root, P_rootβrs, Mlik, K, J, Tsubp, a_γ, b_γ, df = 1) # NB! Σ itself is not needed, only its Cholesky decomp.
+function logp_unpacked_params_lkj(log_ξ, ξ, log_τ, τ, γ, C, inv_S_vec, P_root, P_rootβrs, Mlik, K, J, Tsubp, a_γ, b_γ, transformed_dist, df = 1) # NB! Σ itself is not needed, only its Cholesky decomp.
     η = 1.0
     
     # Start computing the logdensity
@@ -205,8 +205,8 @@ function logp_unpacked_params_lkj(log_ξ, ξ, log_τ, τ, atanh_ρ, C, inv_S_vec
     logp += vsum(log_ξ .- 0.5 * (df+1.0) * log.(1.0 .+ (ξ ./ τ[repeat(1:K, inner=J)]).^2 / df))
     #logp += vsum(log_ξ .- log.(1.0 .+ (ξ ./ τ[repeat(1:K, inner=J)]).^2))
 
-    # Contribution from log p(ρ)
-    logp += sech(atanh_ρ[1])^(2*η)
+    # Contribution from log p(γ)
+    logp += logpdf(transformed_dist, γ)
 
     # Contribution from log p(β | g, ξ)
     #temp1 = reshape(P_root * β, (J, K)) * C

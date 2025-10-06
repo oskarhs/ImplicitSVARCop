@@ -266,6 +266,7 @@ function simulate_VARdata_truemodel(rng::Random.AbstractRNG, order::Int, dim_bas
     return x, y, z
 end
 
+
 function estimate_mean_VARdata(rng::Random.AbstractRNG, Mz::AbstractArray, x::AbstractArray, K::Int, J::Int, T::Int; corr::Real, N_mc = 1000)
     r2 = 1.0
     r3 = 1.0

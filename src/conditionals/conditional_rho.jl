@@ -22,7 +22,7 @@ function logp_conditional_ρ(atanh_ρ::AbstractVector{<:Real}, inv_Σ::AbstractM
     logp = 0.0
 
     # Contribution from p(γ)
-    logp += sech(atanh_ρ[1])^(2*η)
+    logp += 2*η * log(sech(atanh_ρ[1]))
 
     # Contribution from p(β | Σ(γ))
     logp += J * logdet(C)
@@ -58,12 +58,14 @@ function grad_logp_conditional_ρ(atanh_ρ::AbstractVector{<:Real}, β::Abstract
     #Σ = Symmetric([1.0 tanh(atanh_ρ[1]); tanh(atanh_ρ[1]) 1.0])
     inv_Σ = compute_inv_Σ_ρ(atanh_ρ)
     Dldv = [0.0, sech(atanh_ρ[1])^2, sech(atanh_ρ[1])^2, 0.0]
+    #Dldv = [0.0, -2*η*tanh(atanh_ρ[1]), -2*η*tanh(atanh_ρ[1]), 0.0]
     #Dldv = deriv_Σ_g03(γ, K, M)
     temp_0 = sum(Dldv .* vec(inv_Σ), dims=1)
     temp_02 = kron(inv_Σ, inv_Σ) * Dldv
 
     # Contribution from p(ρ)
-    grad_log_dens_ρ = -2*η*sech(atanh_ρ[1])^(2*η)*tanh(atanh_ρ[1])
+    #grad_log_dens_ρ = -2*η*sech(atanh_ρ[1])^(2*η)*tanh(atanh_ρ[1])
+    grad_log_dens_ρ = -2*η*tanh(atanh_ρ[1])
 
     # Contribution from p(β |ρ, ξ)
     temp_1 = -0.5*J*temp_0 # from logdeterminant of Σ(ρ)
@@ -71,7 +73,6 @@ function grad_logp_conditional_ρ(atanh_ρ::AbstractVector{<:Real}, β::Abstract
     temp_2 = 0.5 * (vec(t1' * t1)') * temp_02
 
     grad_log_dens_β = temp_1[1] + temp_2
-    grad_log_dens_β + grad_log_dens_ρ
 
     # Contribution from likelihood
     temp_3 = -0.5*Tsubp * temp_0 # from logdeterminant of Σ(v)
@@ -133,7 +134,7 @@ function abstractmcmc_sample_ρ(
         # Update state
         state_ρ = AbstractMCMC.setparams!!(Cond, state_ρ, atanh_ρ)
 
-        # Slice sample log_ξ
+        # Sample ρ
         transition_ρ, state_ρ = AbstractMCMC.step(rng, Cond, sampler_ρ, state_ρ; n_adapts=n_adapts)
     end
     atanh_ρ = AbstractMCMC.getparams(state_ρ)

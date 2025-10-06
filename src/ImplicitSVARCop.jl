@@ -11,6 +11,7 @@ using ProgressMeter: Progress, next!
 import BSplineKit: BSplineOrder, BSplineBasis
 import ForwardDiff
 import DifferentiationInterface: prepare_jacobian, value_and_jacobian, AutoForwardDiff, Constant
+import Bijectors
 
 # Required in order to use within Gibbs sampler
 const MetaSliceSamplers = Union{
@@ -53,7 +54,7 @@ export logp_conditional_ξ, grad_logp_conditional_ξ
 
 include(joinpath("helpers", "helpers_g.jl"))
 export compute_Σ
-include(joinpath("conditionals", "conditional_g.jl"))
+include(joinpath("conditionals", "conditional_gamma.jl"))
 #include(joinpath("conditionals_igprior", "conditional_g.jl"))
 export logp_conditional_γ, grad_logp_conditional_γ
 

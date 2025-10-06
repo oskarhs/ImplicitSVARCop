@@ -128,3 +128,39 @@ predict_response_plugin(
     kdests::Vector{T},
     model::VARModel
 ) where {T <: UnivariateKDE} = predict_response_plugin(Random.default_rng(), posterior_samples, kdests, model)
+
+
+function predict_linpred_plugin(
+    rng::Random.AbstractRNG,
+    posterior_samples::Vector{<:AbstractVector{<:Real}},
+    kdests::Vector{T},
+    model::VARModel
+) where {T <: UnivariateKDE}
+    N_mc_z = 100
+    J = model.J
+    K = model.K
+    Tsubp = model.Tsubp
+
+    ikqfs = Vector{BandwidthSelectors.InterpKDEQF}(undef, K) # Vector of interpolated quantile functions
+    for k in 1:K
+        ikqfs[k] = BandwidthSelectors.InterpKDEQF(kdests[k])
+    end
+    #ikqf = InterpKDEQF(kdest)
+    z_pred = zeros(Float64, (size(model.F, 1), K))
+    β_hat = mean(hcat(posterior_samples...)[1:K*J,:], dims=2)
+    βmat = reshape(β_hat, (J, K))
+    #ξ2_hat = mean(exp.(2.0*hcat(posterior_samples...)[K*J+1:2*K*J,:]), dims=2)
+    #ξ2 = exp.(2.0*hcat(posterior_samples...)[K*J+1:2*K*J,:])
+    #ξ2mat = reshape(ξ2_hat, (J, K))
+    for t in 1:Tsubp
+        #s_vec = mean(1.0 ./ sqrt.( 1.0 .+ vec( transpose(@views model.F_sq[t,:]) * ξ2mat ) ) )
+        s_vec = zeros(Float64, K)
+        for i in eachindex(posterior_samples)
+            ξ2_i = reshape(exp.(2.0*posterior_samples[i][K*J+1:2*K*J]), (J, K))
+            s_vec .+= 1/length(posterior_samples) * 1.0 ./ sqrt.( 1.0 .+ vec( transpose(@views model.F_sq[t,:]) * ξ2_i ) )
+        end
+        μ = s_vec .* vec(transpose(@views model.F[t,:]) * βmat)
+        z_pred[t,:] = μ
+    end
+    return z_pred
+end

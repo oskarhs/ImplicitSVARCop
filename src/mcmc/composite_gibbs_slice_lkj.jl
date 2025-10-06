@@ -1,4 +1,4 @@
-function composite_gibbs_abstractmcmc_lkj(rng::Random.AbstractRNG, model::VARModel, sampler_ξ, sampler_ρ, θ_init::AbstractVector, num_samples::Int; n_adapts=n_adapts, progress=true)
+function composite_gibbs_abstractmcmc_lkj(rng::Random.AbstractRNG, model::VARModel, sampler_ξ, sampler_γ, θ_init::AbstractVector, num_samples::Int; n_adapts=n_adapts, progress=true)
     # Unpack data
     z = model.z
     F = model.F
@@ -17,10 +17,16 @@ function composite_gibbs_abstractmcmc_lkj(rng::Random.AbstractRNG, model::VARMod
     log_ξ = θ_init[K*J+1:2*K*J]
     log_τ = θ_init[2*K*J+1:2*K*J+K]
     M_γ = K*M - div(M*(M+1), 2) + M
-    atanh_ρ = [θ_init[end]]
+    γ = θ_init[2*K*J+K+1:end]
+
+    # Set up LKJ distribution for covariance matrix
+    η = 1
+    transformed_dist = Bijectors.transformed(LKJCholesky(K, η))
+    to_chol = Bijectors.inverse(Bijectors.bijector(LKJCholesky(K, η)))
+    C = transpose(inv(to_chol(γ).L))
 
     # Set AbstractMCMC sampler states:
-    inv_Σ = compute_inv_Σ_ρ(atanh_ρ)
+    inv_Σ = C * C'
     XB = F * reshape(β, (J, K))
     Mβ = reshape(β, (J, K))
     fac_ret3 = F * (Mβ * inv_Σ)                 # Tsubp × K. This can be precomputed, and time save should be decent 
@@ -35,11 +41,12 @@ function composite_gibbs_abstractmcmc_lkj(rng::Random.AbstractRNG, model::VARMod
     inv_Sz = inv_S * z # some computation can be reused here
     Mlik = reshape(inv_Sz, (Tsubp, K)) - XB
     vec_MliktMlik_t = transpose(vec(Mlik' * Mlik))
-    state_ρ = nothing
-    atanh_ρ, state_ρ = abstractmcmc_sample_ρ(rng, sampler_ρ, state_ρ, atanh_ρ, β, P_root, Mlik, vec_MliktMlik_t, J, K, Tsubp; n_adapts=n_adapts)
+    state_γ = nothing
+    γ, state_γ = abstractmcmc_sample_γ(rng, sampler_γ, state_γ, γ, transformed_dist, to_chol, β, P_root, Mlik, vec_MliktMlik_t, J, K, Tsubp; n_adapts=n_adapts)
 
     # Upate inverse covariance matrix
-    inv_Σ = compute_inv_Σ_ρ(atanh_ρ)
+    C = transpose(inv(to_chol(γ).L))
+    inv_Σ = C * C'
     # Set up progressbar
     pm = progress ? Progress(num_samples; desc="Generating samples", barlen=31) : nothing
 
@@ -68,16 +75,17 @@ function composite_gibbs_abstractmcmc_lkj(rng::Random.AbstractRNG, model::VARMod
         inv_S = Diagonal( sqrt.( 1.0 .+ vec( F_sq * reshape( ξ2, (J, K) ) ) ) )
         inv_Sz = inv_S * z # some computation can be reused here
         Mlik = reshape(inv_Sz, (Tsubp, K)) - XB
-        vec_MliktMlik_t = transpose(vec(Mlik' * Mlik))
+        vec_MliktMlik_t = transpose(vec(transpose(Mlik) * Mlik))
         
 
         # For now, just leave γ as is (we run on 1D examples, so this parameter has no effect)
-        atanh_ρ, state_ρ = abstractmcmc_sample_ρ(rng, sampler_ρ, state_ρ, atanh_ρ, β, P_root, Mlik, vec_MliktMlik_t, J, K, Tsubp; n_adapts=n_adapts)
+        γ, state_γ = abstractmcmc_sample_γ(rng, sampler_γ, state_γ, γ, transformed_dist, to_chol, β, P_root, Mlik, vec_MliktMlik_t, J, K, Tsubp; n_adapts=n_adapts)
 
-        inv_Σ = compute_inv_Σ_ρ(atanh_ρ)
+        C = transpose(inv(to_chol(γ).L))
+        inv_Σ = C * C'
         
         # Store the values of the chain
-        samples[b] = vcat(β, log_ξ, log_τ, atanh_ρ)
+        samples[b] = vcat(β, log_ξ, log_τ, γ)
 
         if !isnothing(pm)
             next!(pm)

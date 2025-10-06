@@ -135,7 +135,7 @@ function get_varsymbols_lkj(model::VARModel)
     ind0 = ind1
     ind1 = 2*K*J+K + div(K*(K-1), 2)
     for i in ind0 + 1:ind1
-        varnames[i] = Symbol("atanh_ρ[$(i-ind0)]")
+        varnames[i] = Symbol("γ[$(i-ind0)]")
     end
     return varnames
 end

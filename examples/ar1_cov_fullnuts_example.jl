@@ -142,7 +142,7 @@ function test_AR1_cov()
     K = 1 # Dimension of response
     M = 1
     Tsubp = T - p
-    β = [0.8, 0.4]       # autoregressive parameter, covariate
+    β = [0.0, 0.4]       # autoregressive parameter, covariate
 
     z = Vector{Float64}(undef, Tsubp+1)
     x_exo = Vector{Float64}(undef, Tsubp)

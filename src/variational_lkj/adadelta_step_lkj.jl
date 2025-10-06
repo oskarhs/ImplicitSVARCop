@@ -48,7 +48,9 @@ function adadelta_step_lkj(
     d::AbstractVector{<:Real}, 
     N_fac::Int,
     Siginvpart::AbstractMatrix{<:Real},
-    ADA::ADADELTAState
+    ADA::ADADELTAState,
+    transformed_dist,
+    to_chol
 )
     D = length(μ)
     ρ = ADA.ρ
@@ -68,7 +70,7 @@ function adadelta_step_lkj(
     
     θ = μ + Bfac * w1 + d .* w2
 
-    L_μ, L_B, L_d, logp = grad_and_logp_elbo_lkj(model, θ, Bfac, d, w1, w2, Siginvpart) # get gradients and logdensity
+    L_μ, L_B, L_d, logp = grad_and_logp_elbo_lkj(model, θ, Bfac, d, w1, w2, Siginvpart, transformed_dist, to_chol) # get gradients and logdensity
 
     # Set upper triangle of L_B (not including diagonal) to 0:
     tril!(L_B, 0)

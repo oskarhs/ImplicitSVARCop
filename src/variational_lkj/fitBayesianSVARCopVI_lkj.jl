@@ -37,6 +37,11 @@ function fitBayesianSVARCopVI_lkj(rng::Random.AbstractRNG, model::VARModel, n_it
 
     ADA = ADADELTAState(ρ, ϵ, Eδ2_μ, Eg2_μ, Eδ2_B, Eg2_B, Eδ2_d, Eg2_d)
 
+    η = 1.0
+    prior_γ = LKJCholesky(K, η)
+    transformed_dist = Bijectors.transformed(prior_γ)
+    to_chol = Bijectors.inverse(Bijectors.bijector(prior_γ))
+
     # Compute inverse of factor matrix
     d2 = 1.0 ./ d .^2
     Dinv2B = Bfac .* d2
@@ -54,7 +59,7 @@ function fitBayesianSVARCopVI_lkj(rng::Random.AbstractRNG, model::VARModel, n_it
 
     # Perform SGA iterations
     for it in 1:n_iter
-        ELBOs[it], μ, Bfac, d, ADA, Siginvpart, L_μ, L_B, L_d = adadelta_step_lkj(rng, model, μ, Bfac, d, N_fac, Siginvpart, ADA)
+        ELBOs[it], μ, Bfac, d, ADA, Siginvpart, L_μ, L_B, L_d = adadelta_step_lkj(rng, model, μ, Bfac, d, N_fac, Siginvpart, ADA, transformed_dist, to_chol)
         if !isnothing(pm)
             next!(pm; showvalues=[("ELBO", ELBOs[it])])
         end
