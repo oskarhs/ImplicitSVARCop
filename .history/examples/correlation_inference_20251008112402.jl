@@ -1,6 +1,5 @@
 using Random, Distributions, BSplineKit, AdvancedHMC, LogDensityProblems, MCMCChains, LinearAlgebra, ForwardDiff, AbstractMCMC, DataFrames, StatsBase, CSV
-#include(joinpath(@__DIR__, "..", "src", "ImplicitSVARCop.jl"))
-include(joinpath(@__DIR__, "ImplicitSVARCop.jl"))
+include(joinpath(@__DIR__, "..", "src", "ImplicitSVARCop.jl"))
 using .ImplicitSVARCop
 
 

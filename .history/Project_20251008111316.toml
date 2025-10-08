@@ -27,6 +27,7 @@ SliceSampling = "43f4d3e8-9711-4a8c-bd1b-03ac73a255cf"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 StatsAPI = "82ae8749-77ed-4fe6-ae5f-f523153014b0"
+StatsModels = "3eaba693-59b7-5ba5-a881-562e759f1c8d"
 StatsPlots = "f3b207a7-027a-5e70-b257-86293d7955fd"
 Turing = "fce5fe82-541a-59a6-adf8-730c64b5f9a0"
 
