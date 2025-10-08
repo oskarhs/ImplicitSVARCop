@@ -1,4 +1,4 @@
-using Random, Distributions, BSplineKit, StatsPlots, AdvancedHMC, LogDensityProblems, MCMCChains, LinearAlgebra, ForwardDiff, AbstractMCMC, DataFrames, StatsBase
+using Random, Distributions, BSplineKit, StatsPlots, AdvancedHMC, LogDensityProblems, MCMCChains, LinearAlgebra, ForwardDiff, SliceSampling, AbstractMCMC, DataFrames, StatsBase
 include(joinpath(@__DIR__, "..", "src", "ImplicitSVARCop.jl"))
 using .ImplicitSVARCop
 

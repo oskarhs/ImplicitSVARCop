@@ -31,7 +31,7 @@ function composite_gibbs_abstractmcmc_lkj(rng::Random.AbstractRNG, model::VARMod
     Mβ = reshape(β, (J, K))
     fac_ret3 = F * (Mβ * inv_Σ)                 # Tsubp × K. This can be precomputed, and time save should be decent 
     state_ξ = nothing
-    log_ξ, state_ξ = abstractmcmc_sample_log_ξ(rng, sampler_ξ, state_ξ, log_ξ, log_τ, β, C, inv_Σ, z, F_sq, XB, fac_ret3, J, K, Tsubp, df_ξ; n_adapts=n_adapts)
+    log_ξ, state_ξ = abstractmcmc_sample_log_ξ(rng, sampler_ξ, state_ξ, log_ξ, log_τ, β, inv_Σ, z, F, F_sq, XB, fac_ret3, J, K, Tsubp, df_ξ; n_adapts=n_adapts)
 
     # Precompute some quantities
     ξ = vmap(exp, log_ξ)
@@ -68,7 +68,7 @@ function composite_gibbs_abstractmcmc_lkj(rng::Random.AbstractRNG, model::VARMod
         log_τ = sample_τ_ars(rng, log_τ, log_ξ, J, K)
 
         # Sample covariance parameters jointly using NUTS
-        log_ξ, state_ξ = abstractmcmc_sample_log_ξ(rng, sampler_ξ, state_ξ, log_ξ, log_τ, β, C, inv_Σ, z, F_sq, XB, fac_ret3, J, K, Tsubp, df_ξ; n_adapts=n_adapts)
+        log_ξ, state_ξ = abstractmcmc_sample_log_ξ(rng, sampler_ξ, state_ξ, log_ξ, log_τ, β, inv_Σ, z, F, F_sq, XB, fac_ret3, J, K, Tsubp, df_ξ; n_adapts=n_adapts)
 
         # Update relevant model quantities to reflect the new ξ
         ξ = vmap(exp, log_ξ)
@@ -78,11 +78,10 @@ function composite_gibbs_abstractmcmc_lkj(rng::Random.AbstractRNG, model::VARMod
         inv_Sz = inv_S * z # some computation can be reused here
         Mlik = reshape(inv_Sz, (Tsubp, K)) - XB
         vec_MliktMlik_t = transpose(vec(transpose(Mlik) * Mlik))
-        P_rootβrs = reshape(P_root * β, (J, K))
         
 
         # For now, just leave γ as is (we run on 1D examples, so this parameter has no effect)
-        γ, state_γ = abstractmcmc_sample_γ(rng, sampler_γ, state_γ, γ, transformed_dist, to_chol, P_rootβrs, Mlik, vec_MliktMlik_t, J, K, Tsubp; n_adapts=n_adapts)
+        γ, state_γ = abstractmcmc_sample_γ(rng, sampler_γ, state_γ, γ, transformed_dist, to_chol, β, P_root, Mlik, vec_MliktMlik_t, J, K, Tsubp; n_adapts=n_adapts)
 
         C = transpose(inv(to_chol(γ).L))
         inv_Σ = C * C'

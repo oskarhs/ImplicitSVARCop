@@ -36,6 +36,7 @@ function logp_conditional_ξ_autodiff(log_ξ::AbstractArray{<:Real}, log_τ::Abs
             logp += log_ξ[(k-1)*J + j]-0.5*(df_ξ + 1.0) * log(1.0 + (ξ[(k-1)*J + j] / τ[k])^2 / df_ξ) # contribution from prior
         end
     end
+    logp += vsum(log_ξ .- 0.5 * (df+1.0) * log.(1.0 .+ (ξ ./ τ[repeat(1:K, inner=J)]).^2 / df))
 
     # contribution from logdeterminants
     logp += logdet(inv_S) + logdet(P_root)
@@ -52,16 +53,18 @@ function logp_conditional_ξ_autodiff(log_ξ::AbstractArray{<:Real}, log_τ::Abs
     #return logp_conditional_ξ(log_ξ, log_τ, β, inv_Σ, P_root, inv_S, z, F, J, K, Tsubp, df_ξ)
 end
 
-function logp_conditional_ξ_nt(log_ξ::AbstractArray{<:Real}, ξ, τ::AbstractArray{<:Real}, β::AbstractArray, C::AbstractMatrix,
-                               XB::AbstractMatrix, P_root, inv_S, MSvecinvz, J::Int, K::Int, Tsubp::Int, df_ξ::Real) # remove F_sq from args later
+function logp_conditional_ξ_nt(log_ξ::AbstractArray{<:Real}, log_τ::AbstractArray{<:Real}, β::AbstractArray, C::AbstractMatrix, z::AbstractArray,
+                                     F_sq::AbstractMatrix, XB::AbstractMatrix, J::Int, K::Int, Tsubp::Int, df_ξ::Real) # remove F_sq from args later
+    ξ = exp.(log_ξ) # dimension J*K
+    τ = exp.(log_τ)
+    P_root = Diagonal(1.0 ./ ξ)
+    inv_S = Diagonal( sqrt.( 1.0 .+ vec( F_sq * reshape( abs2.(ξ), (J, K) ) ) ) ) # should square P_root here.
     logp = 0.0
-#=     for k in 1:K
+    for k in 1:K
         for j in 1:J
             logp += log_ξ[(k-1)*J + j]-0.5*(df_ξ + 1.0) * log(1.0 + (ξ[(k-1)*J + j] / τ[k])^2 / df_ξ) # contribution from prior
         end
-    end =#
-    logp += vsum(log_ξ .- 0.5 * (df_ξ+1.0) * log.(1.0 .+ (ξ ./ τ[repeat(1:K, inner=J)]).^2 / df_ξ))
-
+    end
     # contribution from logdeterminants
     logp += logdet(inv_S) + logdet(P_root)
 
@@ -70,7 +73,7 @@ function logp_conditional_ξ_nt(log_ξ::AbstractArray{<:Real}, ξ, τ::AbstractA
     logp -= 0.5*sum(abs2, temp1)
 
     # quadratic form in likelihood
-    temp2 = (MSvecinvz - XB) * C
+    temp2 = (reshape(inv_S * z, (Tsubp, K)) - XB) * C
     logp -= 0.5*sum(abs2, temp2)
     return logp
     #return logp_conditional_ξ(log_ξ, log_τ, β, inv_Σ, P_root, inv_S, z, F, J, K, Tsubp, df_ξ)
@@ -133,8 +136,15 @@ function grad_logp_conditional_ξ_unpacked(log_ξ::AbstractArray{<:Real}, ξ::Ab
 end
 
 
-function grad_logp_conditional_ξ_nt(ξ::AbstractArray{<:Real}, τ::AbstractArray{<:Real}, β::AbstractArray, inv_Σ::AbstractArray, z::AbstractVector,
-                                    F_sq::AbstractArray, fac_ret3::AbstractMatrix, P_root, inv_S, MSvecinvz, J::Int, K::Int, Tsubp::Int, df_ξ::Real)
+function grad_logp_conditional_ξ_nt(log_ξ::AbstractArray{<:Real}, τ::AbstractArray{<:Real}, β::AbstractArray, inv_Σ::AbstractArray,
+                                    z::AbstractArray, F_sq::AbstractArray, fac_ret3::AbstractMatrix, J::Int, K::Int, Tsubp::Int, df_ξ::Real)
+    # Precompute relevant quantities.
+    ξ = map(exp, log_ξ)
+    P_root = Diagonal(map(inv, ξ))
+    inv_S = Diagonal( sqrt.( 1.0 .+ vec( F_sq * reshape( ξ .^2, (J, K) ) ) ) )
+    MSvecinvz = reshape(inv_S * z, (Tsubp, K))
+
+
     # Reuse reshaped versions of β and Pvec
     Mz = reshape(z, (Tsubp, K))
     Mβ = reshape(β, (J, K))
@@ -204,24 +214,13 @@ LogDensityProblems.capabilities(::Type{<:Conditional_log_ξ}) = LogDensityProble
 
 function LogDensityProblems.logdensity(cond::Conditional_log_ξ, log_ξ)
     (; log_τ, β, C, _, z, F_sq, XB, _, J, K, Tsubp, df_ξ) = cond
-    ξ = exp.(log_ξ) # dimension J*K
-    τ = exp.(log_τ)
-    P_root = Diagonal(1.0 ./ ξ)
-    inv_S = Diagonal( sqrt.( 1.0 .+ vec( F_sq * reshape( abs2.(ξ), (J, K) ) ) ) ) # should square P_root here.
-    MSvecinvz = reshape(inv_S * z, (Tsubp, K))
-    return logp_conditional_ξ_nt(log_ξ, ξ, τ, β, C, XB, P_root, inv_S, MSvecinvz, J, K, Tsubp, df_ξ)
-
+    return logp_conditional_ξ_nt(log_ξ, log_τ, β, C, z, F_sq, XB, J, K, Tsubp, df_ξ)
 
 end
 function LogDensityProblems.logdensity_and_gradient(cond::Conditional_log_ξ, log_ξ) # Can be optimized, there is some overlap with logdensity calculation
     (; log_τ, β, C, inv_Σ, z, F_sq, XB, fac_ret3, J, K, Tsubp, df_ξ) = cond
-    ξ = exp.(log_ξ) # dimension J*K
-    τ = exp.(log_τ)
-    P_root = Diagonal(1.0 ./ ξ)
-    inv_S = Diagonal( sqrt.( 1.0 .+ vec( F_sq * reshape( abs2.(ξ), (J, K) ) ) ) ) # should square P_root here.
-    MSvecinvz = reshape(inv_S * z, (Tsubp, K))
-    logp = logp_conditional_ξ_nt(log_ξ, ξ, τ, β, C, XB, P_root, inv_S, MSvecinvz, J, K, Tsubp, df_ξ)
-    grad = grad_logp_conditional_ξ_nt(ξ, τ, β, inv_Σ, z, F_sq, fac_ret3, P_root, inv_S, MSvecinvz, J, K, Tsubp, df_ξ)
+    logp = logp_conditional_ξ_nt(log_ξ, log_τ, β, C, z, F_sq, XB, J, K, Tsubp, df_ξ)
+    grad = grad_logp_conditional_ξ_nt(log_ξ, exp.(log_τ), β, inv_Σ, z, F_sq, fac_ret3, J, K, Tsubp, df_ξ)
     return logp, grad
 end
 

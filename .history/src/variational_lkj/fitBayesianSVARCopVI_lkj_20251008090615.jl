@@ -79,4 +79,4 @@ function fitBayesianSVARCopVI_lkj(rng::Random.AbstractRNG, model::VARModel, n_it
 end
 
 # Fallback version in case no seed was explicitly provided
-fitBayesianSVARCopVI_lkj(model::VARModel, n_iter::Int, N_fac::Int) = fitBayesianSVARCopVI_lkj(Random.default_rng(), model, n_iter, N_fac)
+fitBayesianSVARCopVI(model::VARModel, n_iter::Int, N_fac::Int) = fitBayesianSVARCopVI(Random.default_rng(), model, n_iter, N_fac)

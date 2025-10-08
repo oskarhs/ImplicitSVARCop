@@ -111,7 +111,8 @@ function abstractmcmc_sample_γ(
     γ::AbstractVector{<:Real},
     transformed_dist,
     to_chol,
-    P_rootβrs::AbstractArray{<:Real},
+    β::AbstractArray{<:Real},
+    P_root::AbstractArray{<:Real},
     Mlik::AbstractArray{<:Real},
     vec_MliktMlik::AbstractArray{<:Real},
     J::Int,
@@ -120,7 +121,7 @@ function abstractmcmc_sample_γ(
     n_adapts::Int
 )   
     # Create target LogDensityModel
-    Cond = AbstractMCMC.LogDensityModel(Conditional_γ(transformed_dist, to_chol, P_rootβrs, Mlik, vec_MliktMlik, J, K, Tsubp))
+    Cond = AbstractMCMC.LogDensityModel(Conditional_γ(transformed_dist, to_chol, β, P_root, Mlik, vec_MliktMlik, J, K, Tsubp))
     if isnothing(state_γ)
         transition_γ, state_γ = AbstractMCMC.step(rng, Cond, sampler_γ; initial_params=γ, n_adapts=n_adapts)
     else

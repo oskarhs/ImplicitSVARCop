@@ -130,7 +130,7 @@ function find_bracketing_interval(log_τ_k::Real, grad::F; δ0::Real = 1, maxite
     throw(error("Unable to find bracketing interval for the maximum of log π(log τ_k | ⋯)."))
 end
 
-function sample_τ_k_ars(rng::Random.AbstractRNG, log_τ_k::Real, log_ξ_k::AbstractVector{<:Real}, J::Int, K::Int)
+function sample_τ_k_ars(rng::Random.AbstractRNG, log_τ_k::Real, log_ξ_k::AbstractArray{<:Real}, J::Int, K::Int)
     logp = let log_ξ_k = log_ξ_k, J = J, K = K
         function (log_τ_k)
             return logp_conditional_τ_k(log_τ_k, log_ξ_k, J, K)
@@ -149,7 +149,7 @@ function sample_τ_k_ars(rng::Random.AbstractRNG, log_τ_k::Real, log_ξ_k::Abst
     return ARS.sample!(rng, sampler, 1)[1]
 end
 
-function sample_τ_ars(rng::Random.AbstractRNG, log_τ::AbstractVector{<:Real}, log_ξ::AbstractVector{<:Real}, J::Int, K::Int)
+function sample_τ_ars(rng::Random.AbstractRNG, log_τ::AbstractVector, log_ξ::AbstractVector, J::Int, K::Int)
     log_τ_new = Vector{Float64}(undef, K)
     for k = 1:K
         log_τ_new[k] = sample_τ_k_ars(rng, log_τ[k], log_ξ[(k-1)*J+1:k*J], J, K)

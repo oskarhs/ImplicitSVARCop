@@ -90,13 +90,13 @@ LogDensityProblems.capabilities(::Type{<:Conditional_γ}) = LogDensityProblems.L
 function LogDensityProblems.logdensity(cond::Conditional_γ, γ)
     (; transformed_dist, to_chol, P_rootβrs, Mlik, vec_MliktMlik_t, J, K, Tsubp) = cond
     C = transpose(inv(to_chol(γ).L)) # inv_Σ = C * C'
-    return logp_conditional_γ(γ, C, transformed_dist, P_rootβrs, Mlik, J, K, Tsubp)
+    return logp_conditional_γ(γ, C, transformed_dist, β, P_root, Mlik, J, K, Tsubp)
 end
 function LogDensityProblems.logdensity_and_gradient(cond::Conditional_γ, γ) # Can be optimized, there is some overlap with logdensity calculation
     (; transformed_dist, to_chol, P_rootβrs, Mlik, vec_MliktMlik_t, J, K, Tsubp) = cond
     C = transpose(inv(to_chol(γ).L)) # inv_Σ = C * C'
-    logp = logp_conditional_γ(γ, C, transformed_dist, P_rootβrs, Mlik, J, K, Tsubp)
-    grad = grad_logp_conditional_γ(γ, C, transformed_dist, to_chol, P_rootβrs, vec_MliktMlik_t, J, K, Tsubp)
+    logp = logp_conditional_γ(γ, C, transformed_dist, β, P_root, Mlik, J, K, Tsubp)
+    grad = grad_logp_conditional_γ(γ, C, transformed_dist, to_chol, β, P_root, vec_MliktMlik_t, J, K, Tsubp)
     return logp, grad
 end
 
@@ -111,7 +111,8 @@ function abstractmcmc_sample_γ(
     γ::AbstractVector{<:Real},
     transformed_dist,
     to_chol,
-    P_rootβrs::AbstractArray{<:Real},
+    β::AbstractArray{<:Real},
+    P_root::AbstractArray{<:Real},
     Mlik::AbstractArray{<:Real},
     vec_MliktMlik::AbstractArray{<:Real},
     J::Int,
@@ -120,7 +121,7 @@ function abstractmcmc_sample_γ(
     n_adapts::Int
 )   
     # Create target LogDensityModel
-    Cond = AbstractMCMC.LogDensityModel(Conditional_γ(transformed_dist, to_chol, P_rootβrs, Mlik, vec_MliktMlik, J, K, Tsubp))
+    Cond = AbstractMCMC.LogDensityModel(Conditional_γ(transformed_dist, to_chol, β, P_root, Mlik, vec_MliktMlik, J, K, Tsubp))
     if isnothing(state_γ)
         transition_γ, state_γ = AbstractMCMC.step(rng, Cond, sampler_γ; initial_params=γ, n_adapts=n_adapts)
     else

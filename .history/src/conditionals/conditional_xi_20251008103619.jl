@@ -221,7 +221,7 @@ function LogDensityProblems.logdensity_and_gradient(cond::Conditional_log_ξ, lo
     inv_S = Diagonal( sqrt.( 1.0 .+ vec( F_sq * reshape( abs2.(ξ), (J, K) ) ) ) ) # should square P_root here.
     MSvecinvz = reshape(inv_S * z, (Tsubp, K))
     logp = logp_conditional_ξ_nt(log_ξ, ξ, τ, β, C, XB, P_root, inv_S, MSvecinvz, J, K, Tsubp, df_ξ)
-    grad = grad_logp_conditional_ξ_nt(ξ, τ, β, inv_Σ, z, F_sq, fac_ret3, P_root, inv_S, MSvecinvz, J, K, Tsubp, df_ξ)
+    grad = grad_logp_conditional_ξ_nt(log_ξ, τ, β, inv_Σ, z, F_sq, fac_ret3, P_root, inv_S, MSvecinvz, J, K, Tsubp, df_ξ)
     return logp, grad
 end
 

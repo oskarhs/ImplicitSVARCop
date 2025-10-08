@@ -36,7 +36,6 @@ function logp_conditional_ξ_autodiff(log_ξ::AbstractArray{<:Real}, log_τ::Abs
             logp += log_ξ[(k-1)*J + j]-0.5*(df_ξ + 1.0) * log(1.0 + (ξ[(k-1)*J + j] / τ[k])^2 / df_ξ) # contribution from prior
         end
     end
-
     # contribution from logdeterminants
     logp += logdet(inv_S) + logdet(P_root)
     C = cholesky(inv_Σ).L
@@ -47,30 +46,6 @@ function logp_conditional_ξ_autodiff(log_ξ::AbstractArray{<:Real}, log_τ::Abs
 
     # quadratic form in likelihood
     temp2 = (reshape(inv_S * z, (Tsubp, K)) - XB) * C
-    logp -= 0.5*sum(abs2, temp2)
-    return logp
-    #return logp_conditional_ξ(log_ξ, log_τ, β, inv_Σ, P_root, inv_S, z, F, J, K, Tsubp, df_ξ)
-end
-
-function logp_conditional_ξ_nt(log_ξ::AbstractArray{<:Real}, ξ, τ::AbstractArray{<:Real}, β::AbstractArray, C::AbstractMatrix,
-                               XB::AbstractMatrix, P_root, inv_S, MSvecinvz, J::Int, K::Int, Tsubp::Int, df_ξ::Real) # remove F_sq from args later
-    logp = 0.0
-#=     for k in 1:K
-        for j in 1:J
-            logp += log_ξ[(k-1)*J + j]-0.5*(df_ξ + 1.0) * log(1.0 + (ξ[(k-1)*J + j] / τ[k])^2 / df_ξ) # contribution from prior
-        end
-    end =#
-    logp += vsum(log_ξ .- 0.5 * (df_ξ+1.0) * log.(1.0 .+ (ξ ./ τ[repeat(1:K, inner=J)]).^2 / df_ξ))
-
-    # contribution from logdeterminants
-    logp += logdet(inv_S) + logdet(P_root)
-
-    # quadratic form in prior
-    temp1 = reshape(P_root * β, (J, K)) * C
-    logp -= 0.5*sum(abs2, temp1)
-
-    # quadratic form in likelihood
-    temp2 = (MSvecinvz - XB) * C
     logp -= 0.5*sum(abs2, temp2)
     return logp
     #return logp_conditional_ξ(log_ξ, log_τ, β, inv_Σ, P_root, inv_S, z, F, J, K, Tsubp, df_ξ)
@@ -133,8 +108,15 @@ function grad_logp_conditional_ξ_unpacked(log_ξ::AbstractArray{<:Real}, ξ::Ab
 end
 
 
-function grad_logp_conditional_ξ_nt(ξ::AbstractArray{<:Real}, τ::AbstractArray{<:Real}, β::AbstractArray, inv_Σ::AbstractArray, z::AbstractVector,
-                                    F_sq::AbstractArray, fac_ret3::AbstractMatrix, P_root, inv_S, MSvecinvz, J::Int, K::Int, Tsubp::Int, df_ξ::Real)
+function grad_logp_conditional_ξ_nt(log_ξ::AbstractArray{<:Real}, τ::AbstractArray{<:Real}, β::AbstractArray, inv_Σ::AbstractArray,
+                                    z::AbstractArray, F::AbstractArray, F_sq::AbstractArray, fac_ret3::AbstractMatrix, J::Int, K::Int, Tsubp::Int, df_ξ::Real)
+    # Precompute relevant quantities.
+    ξ = map(exp, log_ξ)
+    P_root = Diagonal(map(inv, ξ))
+    inv_S = Diagonal( sqrt.( 1.0 .+ vec( F_sq * reshape( ξ .^2, (J, K) ) ) ) )
+    MSvecinvz = reshape(inv_S * z, (Tsubp, K))
+
+
     # Reuse reshaped versions of β and Pvec
     Mz = reshape(z, (Tsubp, K))
     Mβ = reshape(β, (J, K))
@@ -183,14 +165,103 @@ function grad_logp_conditional_ξ_nt(ξ::AbstractArray{<:Real}, τ::AbstractArra
     return grad
 end
 
+function sample_mh_log_ξ_diag( # Use the eigendecomposition to compute cholesky decomp directly later
+    rng::Random.AbstractRNG,
+    backend,
+    prep_grad_ξ,
+    log_ξ::AbstractArray{<:Real},
+    log_τ::AbstractArray{<:Real},
+    β::AbstractArray,
+    inv_Σ::AbstractMatrix,
+    z::AbstractVector,
+    F::AbstractMatrix,
+    F_sq::AbstractMatrix,
+    XB::AbstractMatrix,
+    J::Int,
+    K::Int,
+    Tsubp::Int,
+    df_ξ::Real
+)   
+    τ = map(exp, log_τ)
 
+    lr = 1.0
+    log_ξ_prop = copy(log_ξ)
 
-struct Conditional_log_ξ{A<:AbstractMatrix}
+    for j in 1:J
+    # Compute gradient and hessian of current state
+        
+        grad_prop, hess_prop = value_and_jacobian(
+            ImplicitSVARCop.grad_logp_conditional_ξ_nt,
+            backend,
+            prep_grad_ξ,
+            log_ξ,
+            Constant(τ),
+            Constant(β),
+            Constant(inv_Σ),
+            Constant(z),
+            Constant(F),
+            Constant(F_sq),
+            Constant(J),
+            Constant(K),
+            Constant(Tsubp),
+            Constant(df_ξ)
+        )
+        var_prop = max(1e-10, -1.0/hess_prop[j,j])
+        mean_prop = log_ξ[j] + lr * grad_prop[j] * var_prop
+
+        # Draw proposal
+        log_ξ_prop[j] = rand(rng, Normal(mean_prop, sqrt(var_prop)))
+
+        # Compute reverse proposal:
+        grad_rev, hess_rev = value_and_jacobian(
+            ImplicitSVARCop.grad_logp_conditional_ξ_nt,
+            backend,
+            prep_grad_ξ,
+            log_ξ_prop,
+            Constant(τ),
+            Constant(β),
+            Constant(inv_Σ),
+            Constant(z),
+            Constant(F),
+            Constant(F_sq),
+            Constant(J),
+            Constant(K),
+            Constant(Tsubp),
+            Constant(df_ξ)
+        )
+        var_rev = max(1e-10, -1.0/hess_rev[j,j])
+        mean_rev = log_ξ_prop[j] + lr * grad_rev[j] * var_rev
+
+        if !(isinf(var_rev) || isnan(var_rev) || var_rev == zero(var_rev))
+            log_mh_ratio = logpdf(Normal(mean_rev, sqrt(var_rev)), log_ξ[j]) - logpdf(Normal(mean_prop, sqrt(var_prop)), log_ξ_prop[j])
+
+            if any(isinf.(map(exp, log_ξ_prop))) || any(0.0 .== map(exp, log_ξ_prop))
+                println(mean_prop)
+            end
+
+            log_mh_ratio += logp_conditional_ξ_autodiff(log_ξ_prop, log_τ, β, inv_Σ, z, F, F_sq, XB, J, K, Tsubp, df_ξ) - logp_conditional_ξ_autodiff(log_ξ, log_τ, β, inv_Σ, z, F, F_sq, XB, J, K, Tsubp, df_ξ)
+
+            # Accept or reject
+            u = rand(rng, Uniform(0,1))
+            if log(u) < log_mh_ratio
+                log_ξ[j] = log_ξ_prop[j]
+            else
+                log_ξ_prop[j] = log_ξ[j]
+            end
+        else
+            #println(j, " ", mean_prop, " ", sqrt(var_prop), " ", grad_prop[j], " ", log_ξ_prop[j], " ", log_ξ[j])
+            log_ξ_prop[j] = log_ξ[j]
+        end
+    end
+    return log_ξ
+end
+
+struct Conditional_log_ξ
     log_τ::Vector{Float64}
     β::Vector{Float64}
-    C::A
     inv_Σ::Matrix{Float64}
     z::Vector{Float64}
+    F::Matrix{Float64}
     F_sq::Matrix{Float64}
     XB::Matrix{Float64}
     fac_ret3::Matrix{Float64}
@@ -203,25 +274,13 @@ LogDensityProblems.dimension(cond::Conditional_log_ξ) = cond.J * cond.K
 LogDensityProblems.capabilities(::Type{<:Conditional_log_ξ}) = LogDensityProblems.LogDensityOrder{1}() # We can provide the gradient
 
 function LogDensityProblems.logdensity(cond::Conditional_log_ξ, log_ξ)
-    (; log_τ, β, C, _, z, F_sq, XB, _, J, K, Tsubp, df_ξ) = cond
-    ξ = exp.(log_ξ) # dimension J*K
-    τ = exp.(log_τ)
-    P_root = Diagonal(1.0 ./ ξ)
-    inv_S = Diagonal( sqrt.( 1.0 .+ vec( F_sq * reshape( abs2.(ξ), (J, K) ) ) ) ) # should square P_root here.
-    MSvecinvz = reshape(inv_S * z, (Tsubp, K))
-    return logp_conditional_ξ_nt(log_ξ, ξ, τ, β, C, XB, P_root, inv_S, MSvecinvz, J, K, Tsubp, df_ξ)
-
-
+    (; log_τ, β, inv_Σ, z, F, F_sq, XB, fac_ret3, J, K, Tsubp, df_ξ) = cond
+    return logp_conditional_ξ_autodiff(log_ξ, log_τ, β, inv_Σ, z, F, F_sq, XB, J, K, Tsubp, df_ξ)
 end
 function LogDensityProblems.logdensity_and_gradient(cond::Conditional_log_ξ, log_ξ) # Can be optimized, there is some overlap with logdensity calculation
-    (; log_τ, β, C, inv_Σ, z, F_sq, XB, fac_ret3, J, K, Tsubp, df_ξ) = cond
-    ξ = exp.(log_ξ) # dimension J*K
-    τ = exp.(log_τ)
-    P_root = Diagonal(1.0 ./ ξ)
-    inv_S = Diagonal( sqrt.( 1.0 .+ vec( F_sq * reshape( abs2.(ξ), (J, K) ) ) ) ) # should square P_root here.
-    MSvecinvz = reshape(inv_S * z, (Tsubp, K))
-    logp = logp_conditional_ξ_nt(log_ξ, ξ, τ, β, C, XB, P_root, inv_S, MSvecinvz, J, K, Tsubp, df_ξ)
-    grad = grad_logp_conditional_ξ_nt(ξ, τ, β, inv_Σ, z, F_sq, fac_ret3, P_root, inv_S, MSvecinvz, J, K, Tsubp, df_ξ)
+    (; log_τ, β, inv_Σ, z, F, F_sq, XB, fac_ret3, J, K, Tsubp, df_ξ) = cond
+    logp = logp_conditional_ξ_autodiff(log_ξ, log_τ, β, inv_Σ, z, F, F_sq, XB, J, K, Tsubp, df_ξ)
+    grad = grad_logp_conditional_ξ_nt(log_ξ, exp.(log_τ), β, inv_Σ, z, F, F_sq, fac_ret3, J, K, Tsubp, df_ξ)
     return logp, grad
 end
 
@@ -236,9 +295,9 @@ function abstractmcmc_sample_log_ξ(
     log_ξ::AbstractArray{<:Real},
     log_τ::AbstractArray{<:Real},
     β::AbstractArray{<:Real},
-    C::AbstractMatrix,
     inv_Σ::AbstractArray{<:Real},
     z::AbstractArray{<:Real},
+    F::AbstractArray{<:Real},
     F_sq::AbstractArray{<:Real},
     XB::AbstractArray{<:Real},
     fac_ret3::AbstractArray,
@@ -249,7 +308,7 @@ function abstractmcmc_sample_log_ξ(
     n_adapts::Int
 )   
     # Create target LogDensityModel
-    Cond = AbstractMCMC.LogDensityModel(Conditional_log_ξ(log_τ, β, C, inv_Σ, z, F_sq, XB, fac_ret3, J, K, Tsubp, df_ξ))
+    Cond = AbstractMCMC.LogDensityModel(Conditional_log_ξ(log_τ, β, inv_Σ, z, F, F_sq, XB, fac_ret3, J, K, Tsubp, df_ξ))
     if isnothing(state_ξ)
         transition_ξ, state_ξ = AbstractMCMC.step(rng, Cond, sampler_ξ; initial_params=log_ξ, n_adapts=n_adapts)
     else

@@ -73,7 +73,7 @@ end
 
 Evaluate the second derivative of log p(log(τ_k) | ⋯) with respect to log(τ_k).
 """
-function hess_logp_conditional_τ_k(log_τ_k::Real, log_ξ_k::AbstractVector{<:Real}, J::Int, K::Int)
+function hess_logp_conditional_τ_k(log_τ_k::Real, log_ξ_k::AbstractArray{<:Real}, J::Int, K::Int)
     hess_logp = - 4.0 * exp(2.0*log_τ_k) / (1.0 + exp(2.0*log_τ_k))^2 - 4.0 * sum( exp.(2.0*log_ξ_k .- 2.0*log_τ_k) ./ (1.0 .+ exp.(2.0*log_ξ_k .- 2.0*log_τ_k)).^2 )
     return hess_logp
 end
@@ -83,7 +83,7 @@ end
 
 Perform a Metropolis-Hastings step for log(τ_k), using a 2nd order Taylor expansion around the current value to form a Gaussian proposal.
 """
-function sample_mh_τ_k(rng::Random.AbstractRNG, log_τ_k::Real, log_ξ_k::AbstractVector{<:Real}, J::Int, K::Int) # optimize implementation later, for now just make sure that this works
+function sample_mh_τ_k(rng::Random.AbstractRNG, log_τ_k::Real, log_ξ_k::AbstractArray{<:Real}, J::Int, K::Int) # optimize implementation later, for now just make sure that this works
     # compute gradient, hessian for proposal:
 
     grad_prop = grad_logp_conditional_τ_k(log_τ_k, log_ξ_k, J, K)
@@ -109,7 +109,7 @@ function sample_mh_τ_k(rng::Random.AbstractRNG, log_τ_k::Real, log_ξ_k::Abstr
 end
 
 # At a later point in time: perhaps change this to take in vector of log_τ_k and vector of log_ξ_k
-function sample_mh_τ_all(rng::Random.AbstractRNG, log_τ::AbstractVector{<:Real}, log_ξ::AbstractVector{<:Real}, J::Int, K::Int)
+function sample_mh_τ_all(rng::Random.AbstractRNG, log_τ::AbstractVector, log_ξ::AbstractVector, J::Int, K::Int)
     for k = 1:K
         log_τ[k] = sample_mh_τ_k(rng, log_τ[k], log_ξ[(k-1)*J+1:k*J], J, K)
     end
@@ -130,7 +130,7 @@ function find_bracketing_interval(log_τ_k::Real, grad::F; δ0::Real = 1, maxite
     throw(error("Unable to find bracketing interval for the maximum of log π(log τ_k | ⋯)."))
 end
 
-function sample_τ_k_ars(rng::Random.AbstractRNG, log_τ_k::Real, log_ξ_k::AbstractVector{<:Real}, J::Int, K::Int)
+function sample_τ_k_ars(rng::Random.AbstractRNG, log_τ_k::Real, log_ξ_k::AbstractArray{<:Real}, J::Int, K::Int)
     logp = let log_ξ_k = log_ξ_k, J = J, K = K
         function (log_τ_k)
             return logp_conditional_τ_k(log_τ_k, log_ξ_k, J, K)
@@ -146,13 +146,5 @@ function sample_τ_k_ars(rng::Random.AbstractRNG, log_τ_k::Real, log_ξ_k::Abst
 
     obj = ARS.Objective(logp, grad)
     sampler = ARS.ARSampler(obj, [log_τ_k_lower, log_τ_k, log_τ_k_upper], (-Inf, Inf))
-    return ARS.sample!(rng, sampler, 1)[1]
-end
-
-function sample_τ_ars(rng::Random.AbstractRNG, log_τ::AbstractVector{<:Real}, log_ξ::AbstractVector{<:Real}, J::Int, K::Int)
-    log_τ_new = Vector{Float64}(undef, K)
-    for k = 1:K
-        log_τ_new[k] = sample_τ_k_ars(rng, log_τ[k], log_ξ[(k-1)*J+1:k*J], J, K)
-    end
-    return log_τ_new
+    return ARS.sample!(sampler, 1)[1]
 end
