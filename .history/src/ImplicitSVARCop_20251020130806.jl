@@ -23,7 +23,7 @@ AbstractMCMC.getparams(state::MetaSliceSamplers) = state.transition.params
 
 include(joinpath("..", "BandwidthSelectors.jl", "src", "BandwidthSelectors.jl"))
 using .BandwidthSelectors
-export fit, SSVKernel, ISJ, SJ, Silverman, Abramson, DiffusionKernel, UnivariateKDE, InterpKDEQF, InterpKDECDF, ISJ
+export fit, SSVKernel, UnivariateKDE, InterpKDEQF, InterpKDECDF
 
 
 

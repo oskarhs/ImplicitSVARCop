@@ -36,7 +36,7 @@ function forecast(
         ikqfs[k] = InterpKDEQF(kdests[k])
     end
     #ikqf = InterpKDEQF(kdest)
-    y_pred = Array{Float64}(undef, (i, size(model.F, 1)-H, K, H)) # so that y[i, t, k, h] is the h-step ahead forecast of variable k at time t. (for now, just one-step ahead forecasts)
+    y_pred = Array{Float64}(undef, (i, size(model.F, 1), K, H)) # so that y[i, t, k, h] is the h-step ahead forecast of variable k at time t. (for now, just one-step ahead forecasts)
     for i in eachindex(posterior_samples)
         θ = posterior_samples[i]
         β = θ[1:K*J]
@@ -61,8 +61,8 @@ function forecast(
             for h in 1:H-1
                 # Generate z:
                 ϵ = L * rand(rng, Normal(0, 1), K)
-                s_vec = 1.0 ./ sqrt.( 1.0 .+ vec( transpose(x) .^2 * ξ2mat ) )
-                μ = s_vec .* vec(transpose(x) * Mβ)
+                s_vec = 1.0 ./ sqrt.( 1.0 .+ vec( x .^2 * ξ2mat ) )
+                μ = s_vec .* vec(x.^2 * Mβ)
                 z = μ + s_vec .* ϵ
                 for k in 1:K
                     y_pred[i, t, k, h] = quantile(iqkfs[k], cdf(Normal(), z[k]))
@@ -70,14 +70,7 @@ function forecast(
                 # Move past latent observations one time step back for next forecast
                 x[1:K*p-K] = x[K+1:K*p]
                 x[K*p-K+1:K*p] = z
-                x[K*p+1:end] = F[t+h,K*p+1:end] # exogenous covariates
-            end
-            ϵ = L * rand(rng, Normal(0, 1), K)
-            s_vec = 1.0 ./ sqrt.( 1.0 .+ vec( transpose(x) .^2 * ξ2mat ) )
-            μ = s_vec .* vec(transpose(x) * Mβ)
-            z = μ + s_vec .* ϵ
-            for k in 1:K
-                y_pred[i, t, k, h] = quantile(iqkfs[k], cdf(Normal(), z[k]))
+                x[K*p+1:end] = F[t+h,K*p+1:end]
             end
         end
     end
@@ -94,16 +87,15 @@ forecast(
 
 Predict the `τ`-quantiles of y at time horizon `h`.
 
-Return quant_pred[τ, t, k, h]
+Return quant_pred[t, k, h]
 """
 function predict_quantiles(
     rng::Random.AbstractRNG,
+    h::Int,
     τ::AbstractVector{<:Real},
     posterior_samples::Vector{<:AbstractVector{<:Real}},
     kdests::Vector{T},
-    model::VARModel, # This is the new data for which we want to obtain predictions.
-    p::Int,
-    H::Int
+    model::VARModel # This is the new data for which we want to obtain predictions.
 ) where {T <: UnivariateKDE}
     if minimum(τ) < 0.0 || maximum(τ) > 1.0
         throw(ArgumentError("All quantiles must be in the range [0,1]"))
@@ -112,7 +104,7 @@ function predict_quantiles(
     for k in 1:model.K
         ikqfs[k] = BandwidthSelectors.InterpKDEQF(kdests[k])
     end
-    y_pred = forecast(rng, posterior_samples, kdests, model, p, H) # y[i, t, k, h] (minus the 4th dim for now)
+    y_pred = forecast(rng, posterior_samples, kdests, model) # y[i, t, k, h] (minus the 4th dim for now)
     
     quant_pred = mapslices(x -> quantile(x, τ), y_pred, dims=[1]) # q[τ, t, k, h]
 
@@ -123,13 +115,13 @@ end
 
 Compute predictive means
 """
-function predict_means(
+function predict_quantiles(
     rng::Random.AbstractRNG,
+    h::Int,
+    τ::AbstractVector{<:Real},
     posterior_samples::Vector{<:AbstractVector{<:Real}},
     kdests::Vector{T},
-    model::VARModel, # This is the new data for which we want to obtain predictions.
-    p::Int,
-    H::Int
+    model::VARModel # This is the new data for which we want to obtain predictions.
 ) where {T <: UnivariateKDE}
     if minimum(τ) < 0.0 || maximum(τ) > 1.0
         throw(ArgumentError("All quantiles must be in the range [0,1]"))
@@ -138,7 +130,7 @@ function predict_means(
     for k in 1:model.K
         ikqfs[k] = BandwidthSelectors.InterpKDEQF(kdests[k])
     end
-    y_pred = forecast(rng, posterior_samples, kdests, model, p, H) # y[i, t, k, h] (minus the 4th dim for now)
+    y_pred = forecast(rng, posterior_samples, kdests, model) # y[i, t, k, h] (minus the 4th dim for now)
     
     mean_pred = mapslices(mean, y_pred, dims=[1]) # m[t, k, h]
 

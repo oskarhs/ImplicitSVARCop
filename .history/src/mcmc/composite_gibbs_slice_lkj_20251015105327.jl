@@ -43,8 +43,6 @@ function composite_gibbs_abstractmcmc_lkj(rng::Random.AbstractRNG, model::VARMod
     vec_MliktMlik_t = transpose(vec(Mlik' * Mlik))
     P_rootβrs = reshape(P_root * β, (J, K))
     state_γ = nothing
-
-    # Make sure we avoid numerical issues due to exploding gradients
     γ, state_γ = ImplicitSVARCop.abstractmcmc_sample_γ(rng, sampler_γ, state_γ, γ, transformed_dist, to_chol, P_rootβrs, Mlik, vec_MliktMlik_t, J, K, Tsubp; n_adapts=n_adapts)
 
     # Upate inverse covariance matrix

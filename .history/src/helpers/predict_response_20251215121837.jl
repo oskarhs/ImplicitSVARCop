@@ -36,7 +36,7 @@ function forecast(
         ikqfs[k] = InterpKDEQF(kdests[k])
     end
     #ikqf = InterpKDEQF(kdest)
-    y_pred = Array{Float64}(undef, (i, size(model.F, 1)-H, K, H)) # so that y[i, t, k, h] is the h-step ahead forecast of variable k at time t. (for now, just one-step ahead forecasts)
+    y_pred = Array{Float64}(undef, (i, size(model.F, 1), K, H)) # so that y[i, t, k, h] is the h-step ahead forecast of variable k at time t. (for now, just one-step ahead forecasts)
     for i in eachindex(posterior_samples)
         θ = posterior_samples[i]
         β = θ[1:K*J]
@@ -61,8 +61,8 @@ function forecast(
             for h in 1:H-1
                 # Generate z:
                 ϵ = L * rand(rng, Normal(0, 1), K)
-                s_vec = 1.0 ./ sqrt.( 1.0 .+ vec( transpose(x) .^2 * ξ2mat ) )
-                μ = s_vec .* vec(transpose(x) * Mβ)
+                s_vec = 1.0 ./ sqrt.( 1.0 .+ vec( x .^2 * ξ2mat ) )
+                μ = s_vec .* vec(x * Mβ)
                 z = μ + s_vec .* ϵ
                 for k in 1:K
                     y_pred[i, t, k, h] = quantile(iqkfs[k], cdf(Normal(), z[k]))
@@ -70,11 +70,11 @@ function forecast(
                 # Move past latent observations one time step back for next forecast
                 x[1:K*p-K] = x[K+1:K*p]
                 x[K*p-K+1:K*p] = z
-                x[K*p+1:end] = F[t+h,K*p+1:end] # exogenous covariates
+                x[K*p+1:end] = F[t+h,K*p+1:end]
             end
             ϵ = L * rand(rng, Normal(0, 1), K)
-            s_vec = 1.0 ./ sqrt.( 1.0 .+ vec( transpose(x) .^2 * ξ2mat ) )
-            μ = s_vec .* vec(transpose(x) * Mβ)
+            s_vec = 1.0 ./ sqrt.( 1.0 .+ vec( x .^2 * ξ2mat ) )
+            μ = s_vec .* vec(x * Mβ)
             z = μ + s_vec .* ϵ
             for k in 1:K
                 y_pred[i, t, k, h] = quantile(iqkfs[k], cdf(Normal(), z[k]))

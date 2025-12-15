@@ -36,7 +36,7 @@ function forecast(
         ikqfs[k] = InterpKDEQF(kdests[k])
     end
     #ikqf = InterpKDEQF(kdest)
-    y_pred = Array{Float64}(undef, (i, size(model.F, 1)-H, K, H)) # so that y[i, t, k, h] is the h-step ahead forecast of variable k at time t. (for now, just one-step ahead forecasts)
+    y_pred = Array{Float64}(undef, (i, size(model.F, 1), K, H)) # so that y[i, t, k, h] is the h-step ahead forecast of variable k at time t. (for now, just one-step ahead forecasts)
     for i in eachindex(posterior_samples)
         θ = posterior_samples[i]
         β = θ[1:K*J]

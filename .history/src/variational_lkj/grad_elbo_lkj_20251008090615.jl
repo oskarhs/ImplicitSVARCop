@@ -93,8 +93,7 @@ function grad_and_logp_elbo_lkj(
 
     grad_log_τ = grad_logp_conditional_τ(log_τ, log_ξ, J, K) # checked!
 
-    grad_γ = grad_logp_conditional_γ(γ, C, transformed_dist, to_chol, P_rootβrs, vec_MliktMlik_t, J, K, Tsubp)
-
+    grad_γ = grad_logp_conditional_γ(γ, C, transformed_dist, to_chol, β, P_root, vec_MliktMlik_t, J, K, Tsubp) # checked!
 
     # Concatenate gradients
     grad_θ = vcat(grad_β, grad_log_ξ, grad_log_τ, grad_γ)
